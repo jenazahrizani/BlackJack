@@ -1,0 +1,895 @@
+---
+import Game from "../components/Game.astro";
+import HUD from "../components/HUD.astro";
+
+const pageTitle = "Blackjack 21";
+const pageDescription =
+  "A procedural casino-style Blackjack 21 table built with Astro, TypeScript and Canvas 2D.";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+
+    <meta
+      name="theme-color"
+      content="#030504"
+    />
+
+    <meta
+      name="color-scheme"
+      content="dark"
+    />
+
+    <meta
+      name="description"
+      content={pageDescription}
+    />
+
+    <meta
+      name="application-name"
+      content={pageTitle}
+    />
+
+    <title>{pageTitle}</title>
+
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/favicon.svg"
+    />
+
+    <style is:global>
+      :root {
+        color-scheme: dark;
+
+        --page-black: #020403;
+        --page-black-soft: #050807;
+
+        --page-green-deep: #051B15;
+        --page-green: #08271E;
+        --page-green-light: #0C3328;
+
+        --page-gold-dark: #72582B;
+        --page-gold: #C5A35C;
+        --page-gold-light: #E1C777;
+
+        --page-ivory: #E7E1D3;
+
+        --page-shadow:
+          0 24px 80px rgba(0, 0, 0, 0.58);
+
+        --page-border:
+          rgba(197, 163, 92, 0.18);
+
+        --page-glass:
+          rgba(255, 255, 255, 0.025);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        min-height: 100%;
+        background:
+          var(--page-black);
+      }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        margin: 0;
+
+        overflow: hidden;
+
+        background:
+          radial-gradient(
+            ellipse at 50% 18%,
+            rgba(24, 67, 51, 0.15),
+            transparent 48%
+          ),
+          linear-gradient(
+            180deg,
+            #040605 0%,
+            #020403 100%
+          );
+
+        color:
+          var(--page-ivory);
+
+        font-family:
+          "Courier New",
+          Courier,
+          monospace;
+
+        text-rendering:
+          geometricPrecision;
+
+        -webkit-font-smoothing:
+          none;
+
+        -moz-osx-font-smoothing:
+          grayscale;
+
+        user-select:
+          none;
+
+        overscroll-behavior:
+          none;
+
+        touch-action:
+          none;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font:
+          inherit;
+      }
+
+      button {
+        border: 0;
+      }
+
+      ::selection {
+        background:
+          rgba(197, 163, 92, 0.22);
+
+        color:
+          var(--page-ivory);
+      }
+
+      #app {
+        position: relative;
+
+        width: 100vw;
+        height: 100vh;
+
+        min-height: 100dvh;
+
+        overflow: hidden;
+
+        background:
+          var(--page-black);
+      }
+
+      .blackjack-page {
+        position: relative;
+
+        width: 100%;
+        height: 100%;
+
+        min-height: 100%;
+        overflow: hidden;
+
+        isolation: isolate;
+      }
+
+      /*
+       * Ambient room behind the game.
+       *
+       * Kept deliberately subtle so the actual table remains
+       * the visual focal point.
+       */
+      .room-backdrop {
+        position: absolute;
+        inset: 0;
+
+        z-index: 0;
+
+        pointer-events: none;
+
+        background:
+          radial-gradient(
+            ellipse at 50% 30%,
+            rgba(13, 51, 39, 0.15),
+            transparent 52%
+          ),
+          radial-gradient(
+            ellipse at 12% 55%,
+            rgba(197, 163, 92, 0.025),
+            transparent 26%
+          ),
+          radial-gradient(
+            ellipse at 88% 50%,
+            rgba(197, 163, 92, 0.022),
+            transparent 26%
+          ),
+          linear-gradient(
+            180deg,
+            #050706 0%,
+            #020403 100%
+          );
+      }
+
+      /*
+       * Very subtle top architectural lighting.
+       */
+      .room-backdrop::before {
+        content: "";
+
+        position: absolute;
+        inset: 0;
+
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255,255,255,0.018),
+            transparent 12%
+          );
+
+        opacity: 0.8;
+      }
+
+      /*
+       * Small amount of film / screen grain.
+       */
+      .room-backdrop::after {
+        content: "";
+
+        position: absolute;
+        inset: 0;
+
+        pointer-events: none;
+
+        opacity: 0.12;
+
+        background-image:
+          repeating-linear-gradient(
+            0deg,
+            rgba(255,255,255,0.018) 0,
+            rgba(255,255,255,0.018) 1px,
+            transparent 1px,
+            transparent 4px
+          );
+
+        mix-blend-mode:
+          screen;
+      }
+
+      /*
+       * Main game stage.
+       *
+       * Game.astro owns the actual canvas.
+       */
+      .game-stage {
+        position: absolute;
+        inset: 0;
+
+        z-index: 10;
+
+        display: flex;
+        align-items: stretch;
+        justify-content: stretch;
+
+        overflow: hidden;
+      }
+
+      /*
+       * Game component wrapper safety.
+       *
+       * Prevents Astro component wrappers from unexpectedly
+       * changing the canvas sizing model.
+       */
+      .game-stage > * {
+        width: 100%;
+        height: 100%;
+      }
+
+      /*
+       * HUD sits above the canvas but below critical overlays.
+       */
+      .hud-layer {
+        position: absolute;
+        inset: 0;
+
+        z-index: 30;
+
+        pointer-events: none;
+      }
+
+      .hud-layer > * {
+        width: 100%;
+        height: 100%;
+      }
+
+      /*
+       * Top-level cinematic vignette.
+       */
+      .screen-vignette {
+        position: absolute;
+        inset: 0;
+
+        z-index: 40;
+
+        pointer-events: none;
+
+        background:
+          radial-gradient(
+            ellipse at center,
+            transparent 46%,
+            rgba(0, 0, 0, 0.08) 72%,
+            rgba(0, 0, 0, 0.42) 100%
+          );
+
+        box-shadow:
+          inset 0 0 100px rgba(0, 0, 0, 0.34);
+      }
+
+      /*
+       * Dark edge mask.
+       */
+      .screen-edge {
+        position: absolute;
+        inset: 0;
+
+        z-index: 41;
+
+        pointer-events: none;
+
+        border:
+          1px solid rgba(197, 163, 92, 0.035);
+
+        box-shadow:
+          inset 0 0 0 1px rgba(0, 0, 0, 0.25),
+          inset 0 0 40px rgba(0, 0, 0, 0.24);
+      }
+
+      /*
+       * Loading layer gives the app a clean initial state
+       * while Astro and the client game engine initialize.
+       */
+      .boot-screen {
+        position: absolute;
+        inset: 0;
+
+        z-index: 100;
+
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        padding: 24px;
+
+        background:
+          linear-gradient(
+            180deg,
+            rgba(2,4,3,0.98),
+            rgba(2,4,3,0.94)
+          );
+
+        transition:
+          opacity 420ms ease,
+          visibility 420ms ease;
+      }
+
+      .boot-screen.is-hidden {
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      .boot-panel {
+        width: min(420px, 100%);
+
+        padding:
+          26px 28px 24px;
+
+        background:
+          linear-gradient(
+            180deg,
+            rgba(13, 26, 21, 0.94),
+            rgba(5, 12, 9, 0.96)
+          );
+
+        border:
+          1px solid var(--page-border);
+
+        box-shadow:
+          var(--page-shadow),
+          inset 0 1px rgba(255,255,255,0.025);
+
+        text-align:
+          center;
+      }
+
+      .boot-brand {
+        margin-bottom: 7px;
+
+        color:
+          rgba(225, 199, 119, 0.94);
+
+        font-size:
+          11px;
+
+        font-weight:
+          700;
+
+        letter-spacing:
+          0.26em;
+      }
+
+      .boot-title {
+        margin: 0;
+
+        color:
+          var(--page-ivory);
+
+        font-size:
+          clamp(24px, 5vw, 34px);
+
+        font-weight:
+          700;
+
+        line-height:
+          1;
+
+        letter-spacing:
+          0.08em;
+      }
+
+      .boot-rule {
+        width:
+          84px;
+
+        height:
+          1px;
+
+        margin:
+          15px auto 17px;
+
+        background:
+          linear-gradient(
+            90deg,
+            transparent,
+            var(--page-gold),
+            transparent
+          );
+      }
+
+      .boot-status {
+        margin: 0;
+
+        color:
+          rgba(231,225,211,0.48);
+
+        font-size:
+          9px;
+
+        line-height:
+          1.5;
+
+        letter-spacing:
+          0.18em;
+
+        text-transform:
+          uppercase;
+      }
+
+      .boot-dots {
+        display: inline-flex;
+
+        gap: 4px;
+
+        margin-top:
+          15px;
+      }
+
+      .boot-dot {
+        width:
+          4px;
+
+        height:
+          4px;
+
+        background:
+          rgba(197,163,92,0.34);
+
+        animation:
+          bootPulse 1s steps(2, end) infinite;
+      }
+
+      .boot-dot:nth-child(2) {
+        animation-delay:
+          0.18s;
+      }
+
+      .boot-dot:nth-child(3) {
+        animation-delay:
+          0.36s;
+      }
+
+      @keyframes bootPulse {
+        0%,
+        70% {
+          opacity: 0.24;
+        }
+
+        100% {
+          opacity: 1;
+        }
+      }
+
+      /*
+       * Error overlay.
+       */
+      .runtime-error {
+        position: absolute;
+        inset: 0;
+
+        z-index: 110;
+
+        display: none;
+        align-items: center;
+        justify-content: center;
+
+        padding: 24px;
+
+        background:
+          rgba(2, 4, 3, 0.96);
+      }
+
+      .runtime-error.is-visible {
+        display: flex;
+      }
+
+      .runtime-error__panel {
+        width:
+          min(520px, 100%);
+
+        padding:
+          24px;
+
+        border:
+          1px solid rgba(138,39,44,0.4);
+
+        background:
+          #080A09;
+
+        box-shadow:
+          0 24px 70px rgba(0,0,0,0.58);
+      }
+
+      .runtime-error__title {
+        margin: 0 0 8px;
+
+        color:
+          #C76A6F;
+
+        font-size:
+          13px;
+
+        letter-spacing:
+          0.12em;
+      }
+
+      .runtime-error__text {
+        margin: 0;
+
+        color:
+          rgba(231,225,211,0.62);
+
+        font-size:
+          10px;
+
+        line-height:
+          1.7;
+      }
+
+      /*
+       * Mobile adaptation.
+       */
+      @media (max-width: 760px) {
+        .screen-vignette {
+          background:
+            radial-gradient(
+              ellipse at center,
+              transparent 42%,
+              rgba(0,0,0,0.08) 67%,
+              rgba(0,0,0,0.42) 100%
+            );
+        }
+
+        .boot-panel {
+          padding:
+            22px 20px;
+        }
+
+        .boot-title {
+          font-size:
+            24px;
+        }
+      }
+
+      /*
+       * Smaller phones.
+       */
+      @media (max-width: 520px) {
+        .boot-panel {
+          width:
+            min(360px, 100%);
+        }
+
+        .boot-brand {
+          font-size:
+            9px;
+        }
+
+        .boot-title {
+          font-size:
+            22px;
+        }
+
+        .boot-status {
+          font-size:
+            8px;
+        }
+      }
+
+      /*
+       * Reduced motion.
+       */
+      @media (prefers-reduced-motion: reduce) {
+        .boot-dot {
+          animation:
+            none;
+        }
+
+        .boot-screen {
+          transition:
+            none;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <main
+      id="app"
+      class="blackjack-page"
+    >
+      <div
+        class="room-backdrop"
+        aria-hidden="true"
+      ></div>
+
+      <section
+        class="game-stage"
+        aria-label="Blackjack 21 casino table"
+      >
+        <Game />
+      </section>
+
+      <section
+        class="hud-layer"
+        aria-label="Blackjack controls and table information"
+      >
+        <HUD />
+      </section>
+
+      <div
+        id="screen-vignette"
+        class="screen-vignette"
+        aria-hidden="true"
+      ></div>
+
+      <div
+        class="screen-edge"
+        aria-hidden="true"
+      ></div>
+
+      <section
+        id="boot-screen"
+        class="boot-screen"
+        aria-live="polite"
+        aria-label="Loading Blackjack 21"
+      >
+        <div class="boot-panel">
+          <div class="boot-brand">
+            PRIVATE TABLE
+          </div>
+
+          <h1 class="boot-title">
+            BLACKJACK 21
+          </h1>
+
+          <div
+            class="boot-rule"
+            aria-hidden="true"
+          ></div>
+
+          <p
+            id="boot-status"
+            class="boot-status"
+          >
+            Preparing casino table
+          </p>
+
+          <div
+            class="boot-dots"
+            aria-hidden="true"
+          >
+            <span class="boot-dot"></span>
+            <span class="boot-dot"></span>
+            <span class="boot-dot"></span>
+          </div>
+        </div>
+      </section>
+
+      <section
+        id="runtime-error"
+        class="runtime-error"
+        role="alert"
+        aria-live="assertive"
+      >
+        <div class="runtime-error__panel">
+          <h2 class="runtime-error__title">
+            TABLE INITIALIZATION ERROR
+          </h2>
+
+          <p
+            id="runtime-error-text"
+            class="runtime-error__text"
+          >
+            The casino table could not be initialized.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      type BootWindow = Window & {
+        __BLACKJACK_BOOTED__?: boolean;
+      };
+
+      const bootScreen =
+        document.getElementById(
+          "boot-screen"
+        );
+
+      const bootStatus =
+        document.getElementById(
+          "boot-status"
+        );
+
+      const runtimeError =
+        document.getElementById(
+          "runtime-error"
+        );
+
+      const runtimeErrorText =
+        document.getElementById(
+          "runtime-error-text"
+        );
+
+      const app =
+        document.getElementById(
+          "app"
+        );
+
+      const bootWindow =
+        window as BootWindow;
+
+      /*
+       * Prevent duplicate initialization when Astro
+       * performs a client-side navigation.
+       */
+      if (
+        !bootWindow.__BLACKJACK_BOOTED__
+      ) {
+        bootWindow.__BLACKJACK_BOOTED__ = true;
+
+        const hideBootScreen =
+          () => {
+            if (!bootScreen) {
+              return;
+            }
+
+            bootScreen.classList.add(
+              "is-hidden"
+            );
+          };
+
+        const showRuntimeError =
+          (message: string) => {
+            if (runtimeErrorText) {
+              runtimeErrorText.textContent =
+                message;
+            }
+
+            runtimeError?.classList.add(
+              "is-visible"
+            );
+
+            bootScreen?.classList.add(
+              "is-hidden"
+            );
+          };
+
+        /*
+         * Astro executes this script on the client.
+         *
+         * Game.astro is responsible for creating the actual
+         * Game instance. We only use this layer as the page shell
+         * and boot-state bridge.
+         */
+        const updateBootStatus =
+          (message: string) => {
+            if (bootStatus) {
+              bootStatus.textContent =
+                message;
+            }
+          };
+
+        updateBootStatus(
+          "Opening private table"
+        );
+
+        /*
+         * Allow the DOM / Game component to finish mounting.
+         */
+        requestAnimationFrame(() => {
+          updateBootStatus(
+            "Preparing casino table"
+          );
+
+          requestAnimationFrame(() => {
+            /*
+             * Give the renderer one frame to establish
+             * its canvas and backing surface.
+             */
+            setTimeout(() => {
+              try {
+                const canvas =
+                  app?.querySelector(
+                    "canvas"
+                  );
+
+                if (!canvas) {
+                  showRuntimeError(
+                    "The game canvas was not found. Check Game.astro."
+                  );
+
+                  return;
+                }
+
+                updateBootStatus(
+                  "Dealer ready"
+                );
+
+                /*
+                 * Short cinematic boot delay.
+                 *
+                 * This is intentionally brief; the real visual
+                 * intro is driven by Game.ts.
+                 */
+                setTimeout(() => {
+                  hideBootScreen();
+                }, 500);
+              } catch (error) {
+                const message =
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown initialization error.";
+
+                showRuntimeError(
+                  message
+                );
+              }
+            }, 80);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>

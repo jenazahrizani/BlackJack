@@ -1,0 +1,2486 @@
+---
+---
+
+<div class="hud" aria-label="Blackjack interface">
+
+  <!-- =========================================================
+       TOP INFORMATION
+       ========================================================= -->
+
+  <div class="hud-top">
+
+    <div class="hud-top-left">
+
+      <div class="session-badge">
+        <span class="session-light"></span>
+
+        <div class="session-copy">
+          <span>PRIVATE TABLE</span>
+          <strong>ROOM 07</strong>
+        </div>
+      </div>
+
+      <div class="shoe-info">
+        <span>SHOE</span>
+        <strong>02</strong>
+      </div>
+
+    </div>
+
+    <div class="hud-top-center">
+
+      <div class="casino-title">
+        <span>♠</span>
+
+        <div>
+          <small>ROYAL</small>
+          <strong>BLACKJACK 21</strong>
+        </div>
+
+        <span>♥</span>
+      </div>
+
+    </div>
+
+    <div class="hud-top-right">
+
+      <div class="balance">
+        <span>BALANCE</span>
+
+        <strong data-balance>
+          $1,250.00
+        </strong>
+      </div>
+
+      <button
+        class="hud-icon"
+        id="settings-button"
+        type="button"
+        aria-label="Open settings"
+      >
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       DEALER INFORMATION
+       ========================================================= -->
+
+  <div class="dealer-status">
+
+    <div class="dealer-status-line"></div>
+
+    <div class="dealer-status-content">
+
+      <div class="dealer-status-kicker">
+        DEALER
+      </div>
+
+      <div class="dealer-status-name">
+        EMMA
+      </div>
+
+      <div class="dealer-status-state">
+        <span class="dealer-status-dot"></span>
+        DEALING
+      </div>
+
+    </div>
+
+    <div class="dealer-status-line"></div>
+
+  </div>
+
+
+  <!-- =========================================================
+       TABLE MESSAGE
+       ========================================================= -->
+
+  <div
+    class="table-announcement"
+    data-table-announcement
+    aria-live="polite"
+  >
+    <div class="announcement-rule"></div>
+
+    <div class="announcement-content">
+
+      <span class="announcement-label">
+        DEALER
+      </span>
+
+      <strong data-announcement-text>
+        Your move.
+      </strong>
+
+    </div>
+
+    <div class="announcement-rule"></div>
+  </div>
+
+
+  <!-- =========================================================
+       PLAYER HAND SUMMARY
+       ========================================================= -->
+
+  <div class="player-summary">
+
+    <div class="player-summary-left">
+
+      <div class="summary-label">
+        <span>YOUR HAND</span>
+        <small>PLAYER</small>
+      </div>
+
+      <div class="summary-value">
+        <small>VALUE</small>
+
+        <strong data-player-value>
+          18
+        </strong>
+      </div>
+
+    </div>
+
+
+    <div class="player-summary-middle">
+
+      <div class="summary-pill">
+        <span class="summary-pill-dot"></span>
+        2 CARDS
+      </div>
+
+      <div class="summary-separator"></div>
+
+      <div class="summary-pill">
+        <span class="summary-pill-dot"></span>
+        BET $25
+      </div>
+
+      <div class="summary-separator"></div>
+
+      <div class="summary-pill summary-pill--muted">
+        <span class="summary-pill-dot"></span>
+        NO BLACKJACK
+      </div>
+
+    </div>
+
+
+    <div class="player-summary-right">
+
+      <div class="current-bet">
+        <span>CURRENT BET</span>
+        <strong data-bet-value>$25</strong>
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       ACTION BAR
+       ========================================================= -->
+
+  <div class="action-dock">
+
+    <div class="action-header">
+
+      <div>
+        <span>PLAYER ACTION</span>
+        <small>MAKE YOUR DECISION</small>
+      </div>
+
+      <div class="action-turn">
+        <span class="turn-indicator"></span>
+        YOUR TURN
+      </div>
+
+    </div>
+
+
+    <div class="action-buttons">
+
+      <button
+        id="hit"
+        class="action action--primary"
+        type="button"
+        data-action="hit"
+      >
+        <span class="action-hotkey">H</span>
+
+        <span class="action-text">
+          <strong>HIT</strong>
+          <small>DRAW CARD</small>
+        </span>
+
+        <span class="action-arrow">›</span>
+      </button>
+
+
+      <button
+        id="stand"
+        class="action"
+        type="button"
+        data-action="stand"
+      >
+        <span class="action-hotkey">S</span>
+
+        <span class="action-text">
+          <strong>STAND</strong>
+          <small>END HAND</small>
+        </span>
+
+        <span class="action-arrow">›</span>
+      </button>
+
+
+      <button
+        id="double"
+        class="action"
+        type="button"
+        data-action="double"
+      >
+        <span class="action-hotkey">D</span>
+
+        <span class="action-text">
+          <strong>DOUBLE</strong>
+          <small>DOUBLE BET</small>
+        </span>
+
+        <span class="action-arrow">›</span>
+      </button>
+
+
+      <button
+        id="split"
+        class="action action--disabled"
+        type="button"
+        data-action="split"
+        disabled
+      >
+        <span class="action-hotkey">P</span>
+
+        <span class="action-text">
+          <strong>SPLIT</strong>
+          <small>UNAVAILABLE</small>
+        </span>
+
+        <span class="action-arrow">›</span>
+      </button>
+
+    </div>
+
+
+    <div class="action-footer">
+
+      <span>
+        PRESS H / S / D / P
+      </span>
+
+      <span class="action-footer-divider"></span>
+
+      <span>
+        TABLE 07
+      </span>
+
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       BET CONTROL
+       ========================================================= -->
+
+  <div class="bet-control">
+
+    <div class="bet-control-title">
+      <span>BETTING</span>
+      <small>ADJUST STAKE</small>
+    </div>
+
+
+    <div class="bet-amount">
+      <button
+        class="bet-step"
+        type="button"
+        data-bet-action="decrease"
+        aria-label="Decrease bet"
+      >
+        −
+      </button>
+
+      <div class="bet-current">
+        <span>$</span>
+        <strong data-bet-number>25</strong>
+      </div>
+
+      <button
+        class="bet-step"
+        type="button"
+        data-bet-action="increase"
+        aria-label="Increase bet"
+      >
+        +
+      </button>
+    </div>
+
+
+    <div class="bet-presets">
+
+      <button type="button" data-bet-preset="5">
+        $5
+      </button>
+
+      <button type="button" data-bet-preset="10">
+        $10
+      </button>
+
+      <button type="button" data-bet-preset="25">
+        $25
+      </button>
+
+      <button type="button" data-bet-preset="50">
+        $50
+      </button>
+
+      <button type="button" data-bet-preset="100">
+        $100
+      </button>
+
+    </div>
+
+    <div class="bet-limits">
+      MIN $5
+      <span></span>
+      MAX $500
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       SIDE TABLE INFO
+       ========================================================= -->
+
+  <div class="side-info side-info--left">
+
+    <div class="side-info-title">
+      TABLE RULES
+    </div>
+
+    <div class="side-rule">
+      <span>BLACKJACK</span>
+      <strong>3 : 2</strong>
+    </div>
+
+    <div class="side-rule">
+      <span>DEALER</span>
+      <strong>STANDS 17</strong>
+    </div>
+
+    <div class="side-rule">
+      <span>DECK</span>
+      <strong>6 SHOE</strong>
+    </div>
+
+  </div>
+
+
+  <div class="side-info side-info--right">
+
+    <div class="side-info-title">
+      TABLE STATUS
+    </div>
+
+    <div class="status-row">
+      <span>CONNECTION</span>
+      <strong>
+        <i></i>
+        STABLE
+      </strong>
+    </div>
+
+    <div class="status-row">
+      <span>PLAYERS</span>
+      <strong>4 / 5</strong>
+    </div>
+
+    <div class="status-row">
+      <span>ROUND</span>
+      <strong>#01842</strong>
+    </div>
+
+  </div>
+
+
+  <!-- =========================================================
+       LOWER TABLE DECORATION
+       ========================================================= -->
+
+  <div class="bottom-marking">
+
+    <span>♣</span>
+
+    <div>
+      <small>ESTABLISHED</small>
+      <strong>ROYAL CASINO</strong>
+      <small>BLACKJACK TABLE 07</small>
+    </div>
+
+    <span>♦</span>
+
+  </div>
+
+
+  <!-- =========================================================
+       NOTIFICATION
+       ========================================================= -->
+
+  <div
+    class="notification"
+    data-notification
+    aria-live="polite"
+  >
+    <div class="notification-icon">
+      !
+    </div>
+
+    <div class="notification-content">
+      <span>TABLE</span>
+      <strong data-notification-text></strong>
+    </div>
+  </div>
+
+</div>
+
+
+<script>
+  type ActionName =
+    | "hit"
+    | "stand"
+    | "double"
+    | "split";
+
+  const hud = document.querySelector(
+    ".hud"
+  ) as HTMLElement | null;
+
+  if (!hud) {
+    throw new Error(
+      "HUD.astro: .hud element was not found."
+    );
+  }
+
+  const announcement =
+    hud.querySelector(
+      "[data-announcement-text]"
+    ) as HTMLElement | null;
+
+  const balance =
+    hud.querySelector(
+      "[data-balance]"
+    ) as HTMLElement | null;
+
+  const playerValue =
+    hud.querySelector(
+      "[data-player-value]"
+    ) as HTMLElement | null;
+
+  const betValue =
+    hud.querySelector(
+      "[data-bet-value]"
+    ) as HTMLElement | null;
+
+  const betNumber =
+    hud.querySelector(
+      "[data-bet-number]"
+    ) as HTMLElement | null;
+
+  const notification =
+    hud.querySelector(
+      "[data-notification]"
+    ) as HTMLElement | null;
+
+  const notificationText =
+    hud.querySelector(
+      "[data-notification-text]"
+    ) as HTMLElement | null;
+
+  let currentBet = 25;
+
+  let currentBalance = 1250;
+
+  /* ============================================================
+     UTILS
+     ============================================================ */
+
+  function formatMoney(
+    value: number
+  ) {
+    return new Intl.NumberFormat(
+      "en-US",
+      {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+      }
+    ).format(value);
+  }
+
+  function updateBetUI() {
+    if (betNumber) {
+      betNumber.textContent =
+        String(currentBet);
+    }
+
+    if (betValue) {
+      betValue.textContent =
+        `$${currentBet}`;
+    }
+  }
+
+  function showAnnouncement(
+    text: string
+  ) {
+    if (!announcement) {
+      return;
+    }
+
+    announcement.textContent =
+      text;
+  }
+
+  function showNotification(
+    text: string
+  ) {
+    if (
+      !notification ||
+      !notificationText
+    ) {
+      return;
+    }
+
+    notificationText.textContent =
+      text;
+
+    notification.classList.add(
+      "notification--visible"
+    );
+
+    window.setTimeout(() => {
+      notification.classList.remove(
+        "notification--visible"
+      );
+    }, 2400);
+  }
+
+  /* ============================================================
+     ACTIONS
+     ============================================================ */
+
+  function emitAction(
+    action: ActionName
+  ) {
+    window.dispatchEvent(
+      new CustomEvent(
+        "blackjack:action",
+        {
+          detail: {
+            action,
+          },
+        }
+      )
+    );
+
+    switch (action) {
+      case "hit":
+        showAnnouncement(
+          "Drawing a card..."
+        );
+        break;
+
+      case "stand":
+        showAnnouncement(
+          "Standing."
+        );
+        break;
+
+      case "double":
+        showAnnouncement(
+          "Doubling your bet."
+        );
+        break;
+
+      case "split":
+        showAnnouncement(
+          "Split requested."
+        );
+        break;
+    }
+  }
+
+  const actions =
+    hud.querySelectorAll(
+      "[data-action]"
+    );
+
+  actions.forEach(
+    (element) => {
+      element.addEventListener(
+        "click",
+        () => {
+          const action =
+            element.getAttribute(
+              "data-action"
+            ) as ActionName | null;
+
+          if (!action) {
+            return;
+          }
+
+          emitAction(
+            action
+          );
+        }
+      );
+    }
+  );
+
+  /* ============================================================
+     BETTING
+     ============================================================ */
+
+  const betPresets =
+    hud.querySelectorAll(
+      "[data-bet-preset]"
+    );
+
+  betPresets.forEach(
+    (element) => {
+      element.addEventListener(
+        "click",
+        () => {
+          const value =
+            Number(
+              element.getAttribute(
+                "data-bet-preset"
+              )
+            );
+
+          if (
+            !Number.isFinite(value)
+          ) {
+            return;
+          }
+
+          currentBet =
+            Math.max(
+              5,
+              Math.min(
+                500,
+                value
+              )
+            );
+
+          updateBetUI();
+
+          showNotification(
+            `Bet set to $${currentBet}`
+          );
+
+          window.dispatchEvent(
+            new CustomEvent(
+              "blackjack:bet",
+              {
+                detail: {
+                  value:
+                    currentBet,
+                },
+              }
+            )
+          );
+        }
+      );
+    }
+  );
+
+  const betActions =
+    hud.querySelectorAll(
+      "[data-bet-action]"
+    );
+
+  betActions.forEach(
+    (element) => {
+      element.addEventListener(
+        "click",
+        () => {
+          const action =
+            element.getAttribute(
+              "data-bet-action"
+            );
+
+          if (
+            action ===
+            "increase"
+          ) {
+            currentBet =
+              Math.min(
+                500,
+                currentBet + 5
+              );
+          }
+
+          if (
+            action ===
+            "decrease"
+          ) {
+            currentBet =
+              Math.max(
+                5,
+                currentBet - 5
+              );
+          }
+
+          updateBetUI();
+        }
+      );
+    }
+  );
+
+  /* ============================================================
+     KEYBOARD
+     ============================================================ */
+
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      switch (
+        event.key.toLowerCase()
+      ) {
+        case "h":
+          emitAction("hit");
+          break;
+
+        case "s":
+          emitAction("stand");
+          break;
+
+        case "d":
+          emitAction("double");
+          break;
+
+        case "p":
+          emitAction("split");
+          break;
+      }
+    }
+  );
+
+  /* ============================================================
+     GAME EVENT BRIDGE
+     ============================================================ */
+
+  window.addEventListener(
+    "blackjack:status",
+    (
+      event
+    ) => {
+      const customEvent =
+        event as CustomEvent<{
+          announcement?: string;
+          balance?: number;
+          playerValue?: number;
+          bet?: number;
+          notification?: string;
+        }>;
+
+      const detail =
+        customEvent.detail;
+
+      if (
+        typeof detail.announcement ===
+        "string"
+      ) {
+        showAnnouncement(
+          detail.announcement
+        );
+      }
+
+      if (
+        typeof detail.balance ===
+        "number"
+      ) {
+        currentBalance =
+          detail.balance;
+
+        if (balance) {
+          balance.textContent =
+            formatMoney(
+              currentBalance
+            );
+        }
+      }
+
+      if (
+        typeof detail.playerValue ===
+        "number"
+      ) {
+        if (playerValue) {
+          playerValue.textContent =
+            String(
+              detail.playerValue
+            );
+        }
+      }
+
+      if (
+        typeof detail.bet ===
+        "number"
+      ) {
+        currentBet =
+          detail.bet;
+
+        updateBetUI();
+      }
+
+      if (
+        typeof detail.notification ===
+        "string"
+      ) {
+        showNotification(
+          detail.notification
+        );
+      }
+    }
+  );
+
+  /* ============================================================
+     INITIAL STATE
+     ============================================================ */
+
+  updateBetUI();
+</script>
+
+
+<style>
+  /* ==========================================================
+     HUD ROOT
+     ========================================================== */
+
+  .hud {
+    position: absolute;
+    inset: 0;
+
+    z-index: 200;
+
+    pointer-events: none;
+
+    color: #e7e1d3;
+
+    font-family:
+      "Courier New",
+      Courier,
+      monospace;
+
+    user-select: none;
+  }
+
+  .hud button {
+    font-family: inherit;
+  }
+
+
+  /* ==========================================================
+     TOP
+     ========================================================== */
+
+  .hud-top {
+    position: absolute;
+
+    top: 0;
+    left: 0;
+    right: 0;
+
+    height: 78px;
+
+    display: grid;
+    grid-template-columns:
+      minmax(0, 1fr)
+      auto
+      minmax(0, 1fr);
+
+    align-items: center;
+
+    padding: 0 30px;
+
+    border-bottom:
+      1px solid
+      rgba(197, 163, 92, 0.14);
+
+    background:
+      linear-gradient(
+        180deg,
+        rgba(3, 6, 5, 0.93),
+        rgba(3, 6, 5, 0.68)
+      );
+
+    backdrop-filter:
+      blur(9px);
+
+    pointer-events: auto;
+  }
+
+  .hud-top-left,
+  .hud-top-right {
+    display: flex;
+    align-items: center;
+  }
+
+  .hud-top-left {
+    gap: 25px;
+  }
+
+  .hud-top-right {
+    justify-content: flex-end;
+
+    gap: 18px;
+  }
+
+  .session-badge {
+    display: flex;
+    align-items: center;
+
+    gap: 9px;
+  }
+
+  .session-light {
+    width: 6px;
+    height: 6px;
+
+    border-radius: 50%;
+
+    background:
+      #95a976;
+
+    box-shadow:
+      0 0 8px
+      rgba(149, 169, 118, 0.72);
+  }
+
+  .session-copy {
+    display: flex;
+    flex-direction: column;
+
+    gap: 2px;
+  }
+
+  .session-copy span {
+    font-size: 7px;
+
+    letter-spacing: 2px;
+
+    color:
+      rgba(231, 225, 211, 0.34);
+  }
+
+  .session-copy strong {
+    font-size: 10px;
+
+    letter-spacing: 1.4px;
+
+    color:
+      rgba(231, 225, 211, 0.78);
+  }
+
+  .shoe-info {
+    display: flex;
+    flex-direction: column;
+
+    gap: 2px;
+
+    padding-left: 18px;
+
+    border-left:
+      1px solid
+      rgba(197, 163, 92, 0.16);
+  }
+
+  .shoe-info span {
+    font-size: 7px;
+
+    letter-spacing: 1.8px;
+
+    color:
+      rgba(231, 225, 211, 0.30);
+  }
+
+  .shoe-info strong {
+    font-size: 10px;
+
+    color:
+      rgba(197, 163, 92, 0.76);
+  }
+
+
+  /* ==========================================================
+     TITLE
+     ========================================================== */
+
+  .hud-top-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .casino-title {
+    display: flex;
+    align-items: center;
+
+    gap: 11px;
+
+    color:
+      rgba(197, 163, 92, 0.58);
+  }
+
+  .casino-title > span {
+    font-size: 11px;
+
+    opacity: 0.65;
+  }
+
+  .casino-title > div {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+
+    gap: 2px;
+  }
+
+  .casino-title small {
+    font-size: 6px;
+
+    letter-spacing: 4px;
+
+    color:
+      rgba(197, 163, 92, 0.60);
+  }
+
+  .casino-title strong {
+    font-size: 12px;
+
+    letter-spacing: 2px;
+
+    color:
+      rgba(231, 225, 211, 0.80);
+  }
+
+
+  /* ==========================================================
+     BALANCE
+     ========================================================== */
+
+  .balance {
+    display: flex;
+    flex-direction: column;
+
+    align-items: flex-end;
+
+    gap: 2px;
+  }
+
+  .balance span {
+    font-size: 7px;
+
+    letter-spacing: 1.8px;
+
+    color:
+      rgba(231, 225, 211, 0.34);
+  }
+
+  .balance strong {
+    font-size: 14px;
+
+    letter-spacing: 1px;
+
+    color:
+      #dfc77e;
+  }
+
+  .hud-icon {
+    width: 35px;
+    height: 35px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    flex-direction: column;
+
+    gap: 4px;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.25);
+
+    border-radius: 0;
+
+    background:
+      rgba(255, 255, 255, 0.018);
+
+    pointer-events: auto;
+
+    cursor: pointer;
+  }
+
+  .hud-icon:hover {
+    border-color:
+      rgba(197, 163, 92, 0.58);
+
+    background:
+      rgba(197, 163, 92, 0.06);
+  }
+
+  .hud-icon span {
+    width: 13px;
+    height: 1px;
+
+    background:
+      rgba(231, 225, 211, 0.58);
+  }
+
+
+  /* ==========================================================
+     DEALER
+     ========================================================== */
+
+  .dealer-status {
+    position: absolute;
+
+    top: 95px;
+    left: 50%;
+
+    transform:
+      translateX(-50%);
+
+    width: min(
+      310px,
+      42vw
+    );
+
+    display: grid;
+
+    grid-template-columns:
+      1fr auto 1fr;
+
+    align-items: center;
+
+    gap: 12px;
+  }
+
+  .dealer-status-line {
+    height: 1px;
+
+    background:
+      linear-gradient(
+        90deg,
+        transparent,
+        rgba(197, 163, 92, 0.23)
+      );
+  }
+
+  .dealer-status-line:last-child {
+    background:
+      linear-gradient(
+        270deg,
+        transparent,
+        rgba(197, 163, 92, 0.23)
+      );
+  }
+
+  .dealer-status-content {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+
+    gap: 3px;
+
+    text-shadow:
+      2px 2px 0
+      rgba(0, 0, 0, 0.72);
+  }
+
+  .dealer-status-kicker {
+    font-size: 6px;
+
+    letter-spacing: 3px;
+
+    color:
+      rgba(197, 163, 92, 0.68);
+  }
+
+  .dealer-status-name {
+    font-size: 10px;
+
+    letter-spacing: 2px;
+
+    color:
+      rgba(231, 225, 211, 0.76);
+  }
+
+  .dealer-status-state {
+    display: flex;
+    align-items: center;
+
+    gap: 6px;
+
+    font-size: 6px;
+
+    letter-spacing: 1.5px;
+
+    color:
+      rgba(231, 225, 211, 0.30);
+  }
+
+  .dealer-status-dot {
+    width: 4px;
+    height: 4px;
+
+    border-radius: 50%;
+
+    background:
+      #c5a35c;
+
+    box-shadow:
+      0 0 6px
+      rgba(197, 163, 92, 0.60);
+  }
+
+
+  /* ==========================================================
+     ANNOUNCEMENT
+     ========================================================== */
+
+  .table-announcement {
+    position: absolute;
+
+    left: 50%;
+    top: 34%;
+
+    transform:
+      translateX(-50%);
+
+    width: min(
+      360px,
+      46vw
+    );
+
+    display: flex;
+    align-items: center;
+
+    gap: 12px;
+
+    transition:
+      opacity 160ms ease;
+  }
+
+  .announcement-rule {
+    flex: 1;
+
+    height: 1px;
+
+    background:
+      linear-gradient(
+        90deg,
+        transparent,
+        rgba(197, 163, 92, 0.22)
+      );
+  }
+
+  .announcement-rule:last-child {
+    background:
+      linear-gradient(
+        270deg,
+        transparent,
+        rgba(197, 163, 92, 0.22)
+      );
+  }
+
+  .announcement-content {
+    display: flex;
+    align-items: center;
+
+    flex-direction: column;
+
+    gap: 4px;
+
+    white-space: nowrap;
+  }
+
+  .announcement-label {
+    font-size: 6px;
+
+    letter-spacing: 2.4px;
+
+    color:
+      rgba(197, 163, 92, 0.58);
+  }
+
+  .announcement-content strong {
+    font-size: 10px;
+
+    letter-spacing: 1.3px;
+
+    color:
+      rgba(231, 225, 211, 0.64);
+  }
+
+
+  /* ==========================================================
+     PLAYER SUMMARY
+     ========================================================== */
+
+  .player-summary {
+    position: absolute;
+
+    left: 28px;
+    right: 28px;
+    bottom: 154px;
+
+    display: grid;
+
+    grid-template-columns:
+      1fr auto 1fr;
+
+    align-items: center;
+
+    pointer-events: none;
+  }
+
+  .player-summary-left {
+    display: flex;
+    align-items: center;
+
+    gap: 20px;
+  }
+
+  .summary-label {
+    display: flex;
+    flex-direction: column;
+
+    gap: 3px;
+  }
+
+  .summary-label span {
+    font-size: 8px;
+
+    letter-spacing: 2px;
+
+    color:
+      rgba(197, 163, 92, 0.66);
+  }
+
+  .summary-label small {
+    font-size: 6px;
+
+    letter-spacing: 1px;
+
+    color:
+      rgba(231, 225, 211, 0.25);
+  }
+
+  .summary-value {
+    display: flex;
+    flex-direction: column;
+
+    gap: 2px;
+  }
+
+  .summary-value small {
+    font-size: 6px;
+
+    letter-spacing: 1.5px;
+
+    color:
+      rgba(231, 225, 211, 0.28);
+  }
+
+  .summary-value strong {
+    font-size: 22px;
+
+    line-height: 1;
+
+    color:
+      rgba(231, 225, 211, 0.90);
+
+    text-shadow:
+      2px 2px 0
+      rgba(0, 0, 0, 0.65);
+  }
+
+  .player-summary-middle {
+    display: flex;
+    align-items: center;
+
+    gap: 11px;
+  }
+
+  .summary-pill {
+    display: flex;
+    align-items: center;
+
+    gap: 6px;
+
+    font-size: 6px;
+
+    letter-spacing: 1.1px;
+
+    color:
+      rgba(231, 225, 211, 0.38);
+  }
+
+  .summary-pill-dot {
+    width: 4px;
+    height: 4px;
+
+    border-radius: 50%;
+
+    background:
+      rgba(197, 163, 92, 0.65);
+  }
+
+  .summary-pill--muted {
+    color:
+      rgba(231, 225, 211, 0.22);
+  }
+
+  .summary-separator {
+    width: 1px;
+    height: 11px;
+
+    background:
+      rgba(197, 163, 92, 0.12);
+  }
+
+  .player-summary-right {
+    justify-self: end;
+  }
+
+  .current-bet {
+    display: flex;
+    flex-direction: column;
+
+    align-items: flex-end;
+
+    gap: 3px;
+  }
+
+  .current-bet span {
+    font-size: 6px;
+
+    letter-spacing: 1.6px;
+
+    color:
+      rgba(231, 225, 211, 0.24);
+  }
+
+  .current-bet strong {
+    font-size: 14px;
+
+    letter-spacing: 1px;
+
+    color:
+      rgba(197, 163, 92, 0.78);
+  }
+
+
+  /* ==========================================================
+     ACTION DOCK
+     ========================================================== */
+
+  .action-dock {
+    position: absolute;
+
+    left: 50%;
+    bottom: 43px;
+
+    transform:
+      translateX(-50%);
+
+    width: min(
+      610px,
+      calc(100vw - 340px)
+    );
+
+    padding: 9px 10px 8px;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.20);
+
+    background:
+      linear-gradient(
+        180deg,
+        rgba(9, 15, 12, 0.91),
+        rgba(4, 8, 6, 0.95)
+      );
+
+    box-shadow:
+      5px 5px 0
+      rgba(0, 0, 0, 0.36);
+
+    pointer-events: auto;
+  }
+
+  .action-header {
+    height: 24px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 4px 4px;
+
+    border-bottom:
+      1px solid
+      rgba(197, 163, 92, 0.10);
+  }
+
+  .action-header > div:first-child {
+    display: flex;
+    flex-direction: column;
+
+    gap: 2px;
+  }
+
+  .action-header span {
+    font-size: 6px;
+
+    letter-spacing: 1.7px;
+
+    color:
+      rgba(231, 225, 211, 0.34);
+  }
+
+  .action-header small {
+    font-size: 5px;
+
+    letter-spacing: 1px;
+
+    color:
+      rgba(231, 225, 211, 0.18);
+  }
+
+  .action-turn {
+    display: flex;
+    align-items: center;
+
+    gap: 6px;
+
+    font-size: 6px;
+
+    letter-spacing: 1.4px;
+
+    color:
+      rgba(197, 163, 92, 0.70);
+  }
+
+  .turn-indicator {
+    width: 4px;
+    height: 4px;
+
+    border-radius: 50%;
+
+    background:
+      #c5a35c;
+
+    box-shadow:
+      0 0 7px
+      rgba(197, 163, 92, 0.62);
+  }
+
+  .action-buttons {
+    display: grid;
+
+    grid-template-columns:
+      repeat(4, 1fr);
+
+    gap: 6px;
+
+    padding-top: 7px;
+  }
+
+  .action {
+    position: relative;
+
+    height: 47px;
+
+    display: grid;
+
+    grid-template-columns:
+      auto
+      1fr
+      auto;
+
+    align-items: center;
+
+    gap: 8px;
+
+    padding: 0 9px;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.30);
+
+    border-radius: 0;
+
+    color:
+      rgba(231, 225, 211, 0.85);
+
+    background:
+      linear-gradient(
+        180deg,
+        #18201c,
+        #0a0f0c
+      );
+
+    box-shadow:
+      3px 3px 0
+      rgba(0, 0, 0, 0.48);
+
+    cursor: pointer;
+
+    transition:
+      transform 70ms linear,
+      border-color 120ms ease,
+      background 120ms ease,
+      color 120ms ease;
+  }
+
+  .action:hover:not(:disabled) {
+    transform:
+      translateY(-1px);
+
+    border-color:
+      rgba(225, 199, 119, 0.72);
+
+    color:
+      #e5cc88;
+
+    background:
+      linear-gradient(
+        180deg,
+        #202b25,
+        #0b120f
+      );
+  }
+
+  .action:active:not(:disabled) {
+    transform:
+      translate(
+        2px,
+        2px
+      );
+
+    box-shadow:
+      1px 1px 0
+      rgba(0, 0, 0, 0.48);
+  }
+
+  .action--primary {
+    border-color:
+      rgba(228, 202, 135, 0.68);
+
+    color:
+      #11150f;
+
+    background:
+      linear-gradient(
+        180deg,
+        #d0ae60,
+        #9a7735
+      );
+  }
+
+  .action--primary:hover:not(:disabled) {
+    color:
+      #11150f;
+
+    background:
+      linear-gradient(
+        180deg,
+        #e3c678,
+        #ad8840
+      );
+  }
+
+  .action--disabled,
+  .action:disabled {
+    opacity: 0.28;
+
+    cursor: not-allowed;
+
+    box-shadow:
+      1px 1px 0
+      rgba(0, 0, 0, 0.38);
+  }
+
+  .action-hotkey {
+    width: 18px;
+    height: 18px;
+
+    display: grid;
+    place-items: center;
+
+    border:
+      1px solid
+      currentColor;
+
+    font-size: 7px;
+
+    opacity: 0.72;
+  }
+
+  .action-text {
+    display: flex;
+    flex-direction: column;
+
+    gap: 2px;
+
+    min-width: 0;
+
+    text-align: left;
+  }
+
+  .action-text strong {
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+    white-space: nowrap;
+
+    font-size: 9px;
+
+    letter-spacing: 1.4px;
+  }
+
+  .action-text small {
+    font-size: 5px;
+
+    letter-spacing: 0.8px;
+
+    opacity: 0.44;
+  }
+
+  .action-arrow {
+    font-size: 13px;
+
+    opacity: 0.30;
+  }
+
+  .action-footer {
+    height: 14px;
+
+    display: flex;
+    align-items: flex-end;
+
+    justify-content: center;
+
+    gap: 8px;
+
+    padding-top: 6px;
+
+    font-size: 5px;
+
+    letter-spacing: 1.15px;
+
+    color:
+      rgba(231, 225, 211, 0.19);
+  }
+
+  .action-footer-divider {
+    width: 1px;
+    height: 8px;
+
+    background:
+      rgba(197, 163, 92, 0.12);
+  }
+
+
+  /* ==========================================================
+     BET CONTROL
+     ========================================================== */
+
+  .bet-control {
+    position: absolute;
+
+    left: 27px;
+    bottom: 53px;
+
+    z-index: 210;
+
+    width: 154px;
+
+    padding: 10px;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.17);
+
+    background:
+      rgba(5, 10, 8, 0.76);
+
+    pointer-events: auto;
+  }
+
+  .bet-control-title {
+    display: flex;
+    justify-content: space-between;
+
+    align-items: center;
+
+    margin-bottom: 8px;
+  }
+
+  .bet-control-title span {
+    font-size: 7px;
+
+    letter-spacing: 1.7px;
+
+    color:
+      rgba(197, 163, 92, 0.64);
+  }
+
+  .bet-control-title small {
+    font-size: 5px;
+
+    color:
+      rgba(231, 225, 211, 0.19);
+  }
+
+  .bet-amount {
+    height: 36px;
+
+    display: grid;
+
+    grid-template-columns:
+      30px
+      1fr
+      30px;
+
+    align-items: center;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.20);
+
+    background:
+      rgba(0, 0, 0, 0.18);
+  }
+
+  .bet-step {
+    height: 100%;
+
+    padding: 0;
+
+    border: 0;
+
+    color:
+      rgba(197, 163, 92, 0.68);
+
+    background:
+      transparent;
+
+    cursor: pointer;
+
+    font-size: 15px;
+  }
+
+  .bet-step:hover {
+    background:
+      rgba(197, 163, 92, 0.07);
+
+    color:
+      var(--gold-bright, #e1c777);
+  }
+
+  .bet-current {
+    display: flex;
+
+    align-items: baseline;
+
+    justify-content: center;
+
+    gap: 1px;
+  }
+
+  .bet-current span {
+    font-size: 9px;
+
+    color:
+      rgba(197, 163, 92, 0.68);
+  }
+
+  .bet-current strong {
+    font-size: 18px;
+
+    color:
+      rgba(231, 225, 211, 0.84);
+  }
+
+  .bet-presets {
+    display: grid;
+
+    grid-template-columns:
+      repeat(5, 1fr);
+
+    gap: 3px;
+
+    margin-top: 7px;
+  }
+
+  .bet-presets button {
+    height: 22px;
+
+    padding: 0;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.12);
+
+    border-radius: 0;
+
+    color:
+      rgba(231, 225, 211, 0.34);
+
+    background:
+      rgba(255, 255, 255, 0.014);
+
+    cursor: pointer;
+
+    font-size: 6px;
+  }
+
+  .bet-presets button:hover {
+    border-color:
+      rgba(197, 163, 92, 0.42);
+
+    color:
+      rgba(197, 163, 92, 0.82);
+
+    background:
+      rgba(197, 163, 92, 0.05);
+  }
+
+  .bet-limits {
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    gap: 7px;
+
+    margin-top: 7px;
+
+    font-size: 5px;
+
+    letter-spacing: 1px;
+
+    color:
+      rgba(231, 225, 211, 0.19);
+  }
+
+  .bet-limits span {
+    width: 2px;
+    height: 2px;
+
+    border-radius: 50%;
+
+    background:
+      rgba(197, 163, 92, 0.36);
+  }
+
+
+  /* ==========================================================
+     SIDE INFORMATION
+     ========================================================== */
+
+  .side-info {
+    position: absolute;
+
+    bottom: 59px;
+
+    width: 150px;
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 6px;
+
+    padding: 9px 10px;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.12);
+
+    background:
+      rgba(3, 7, 5, 0.56);
+
+    pointer-events: none;
+  }
+
+  .side-info--left {
+    left: 27px;
+
+    transform:
+      translateY(-137px);
+  }
+
+  .side-info--right {
+    right: 27px;
+
+    transform:
+      translateY(-137px);
+  }
+
+  .side-info-title {
+    padding-bottom: 5px;
+
+    border-bottom:
+      1px solid
+      rgba(197, 163, 92, 0.12);
+
+    font-size: 6px;
+
+    letter-spacing: 1.5px;
+
+    color:
+      rgba(197, 163, 92, 0.54);
+  }
+
+  .side-rule,
+  .status-row {
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 8px;
+  }
+
+  .side-rule span,
+  .status-row span {
+    font-size: 5px;
+
+    letter-spacing: 0.8px;
+
+    color:
+      rgba(231, 225, 211, 0.23);
+  }
+
+  .side-rule strong,
+  .status-row strong {
+    font-size: 6px;
+
+    letter-spacing: 0.4px;
+
+    color:
+      rgba(231, 225, 211, 0.48);
+  }
+
+  .status-row strong {
+    display: flex;
+
+    align-items: center;
+
+    gap: 5px;
+  }
+
+  .status-row i {
+    width: 4px;
+    height: 4px;
+
+    border-radius: 50%;
+
+    background:
+      #879d6a;
+
+    box-shadow:
+      0 0 5px
+      rgba(135, 157, 106, 0.6);
+  }
+
+
+  /* ==========================================================
+     BOTTOM MARKING
+     ========================================================== */
+
+  .bottom-marking {
+    position: absolute;
+
+    left: 50%;
+    bottom: 6px;
+
+    transform:
+      translateX(-50%);
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    opacity: 0.40;
+
+    pointer-events: none;
+  }
+
+  .bottom-marking > span {
+    font-size: 8px;
+
+    color:
+      rgba(197, 163, 92, 0.64);
+  }
+
+  .bottom-marking > div {
+    display: flex;
+
+    align-items: center;
+
+    flex-direction: column;
+
+    gap: 1px;
+  }
+
+  .bottom-marking small {
+    font-size: 4px;
+
+    letter-spacing: 2px;
+
+    color:
+      rgba(231, 225, 211, 0.26);
+  }
+
+  .bottom-marking strong {
+    font-size: 7px;
+
+    letter-spacing: 2px;
+
+    color:
+      rgba(197, 163, 92, 0.68);
+  }
+
+
+  /* ==========================================================
+     NOTIFICATION
+     ========================================================== */
+
+  .notification {
+    position: absolute;
+
+    right: 28px;
+    top: 96px;
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 9px;
+
+    padding: 7px 10px;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.24);
+
+    background:
+      rgba(5, 9, 7, 0.92);
+
+    opacity: 0;
+
+    transform:
+      translateX(12px);
+
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease;
+
+    pointer-events: none;
+  }
+
+  .notification--visible {
+    opacity: 1;
+
+    transform:
+      translateX(0);
+  }
+
+  .notification-icon {
+    width: 18px;
+    height: 18px;
+
+    display: grid;
+    place-items: center;
+
+    border:
+      1px solid
+      rgba(197, 163, 92, 0.30);
+
+    color:
+      rgba(197, 163, 92, 0.78);
+
+    font-size: 8px;
+  }
+
+  .notification-content {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 2px;
+  }
+
+  .notification-content span {
+    font-size: 5px;
+
+    letter-spacing: 1.5px;
+
+    color:
+      rgba(231, 225, 211, 0.24);
+  }
+
+  .notification-content strong {
+    font-size: 7px;
+
+    letter-spacing: 0.8px;
+
+    color:
+      rgba(231, 225, 211, 0.62);
+  }
+
+
+  /* ==========================================================
+     RESPONSIVE
+     ========================================================== */
+
+  @media (max-width: 1200px) {
+    .player-summary-middle {
+      display: none;
+    }
+
+    .action-dock {
+      width: min(
+        590px,
+        calc(100vw - 260px)
+      );
+    }
+
+    .side-info {
+      width: 132px;
+    }
+  }
+
+
+  @media (max-width: 900px) {
+    .hud-top {
+      height: 64px;
+
+      padding:
+        0 18px;
+    }
+
+    .hud-top-center {
+      display: none;
+    }
+
+    .shoe-info {
+      display: none;
+    }
+
+    .dealer-status {
+      top: 77px;
+    }
+
+    .table-announcement {
+      top: 31%;
+    }
+
+    .side-info {
+      display: none;
+    }
+
+    .bet-control {
+      left: 16px;
+      bottom: 98px;
+
+      width: 137px;
+    }
+
+    .action-dock {
+      left: auto;
+      right: 16px;
+
+      bottom: 43px;
+
+      width: min(
+        520px,
+        calc(100vw - 175px)
+      );
+
+      transform: none;
+    }
+  }
+
+
+  @media (max-width: 680px) {
+    .hud-top {
+      height: 57px;
+
+      padding:
+        0 12px;
+    }
+
+    .session-copy {
+      display: none;
+    }
+
+    .balance strong {
+      font-size: 11px;
+    }
+
+    .hud-icon {
+      width: 31px;
+      height: 31px;
+    }
+
+    .dealer-status {
+      top: 68px;
+
+      width: 220px;
+    }
+
+    .table-announcement {
+      top: 29%;
+      width: 220px;
+    }
+
+    .player-summary {
+      left: 13px;
+      right: 13px;
+      bottom: 172px;
+    }
+
+    .player-summary-left {
+      gap: 12px;
+    }
+
+    .summary-label span {
+      font-size: 7px;
+    }
+
+    .summary-value strong {
+      font-size: 19px;
+    }
+
+    .current-bet span {
+      font-size: 5px;
+    }
+
+    .current-bet strong {
+      font-size: 12px;
+    }
+
+    .bet-control {
+      left: 10px;
+      right: 10px;
+      bottom: 98px;
+
+      width: auto;
+
+      padding: 7px;
+    }
+
+    .bet-control-title {
+      display: none;
+    }
+
+    .bet-amount {
+      height: 31px;
+    }
+
+    .bet-presets {
+      display: none;
+    }
+
+    .bet-limits {
+      display: none;
+    }
+
+    .action-dock {
+      left: 10px;
+      right: 10px;
+      bottom: 38px;
+
+      width: auto;
+
+      transform: none;
+
+      padding: 7px;
+    }
+
+    .action-buttons {
+      gap: 4px;
+    }
+
+    .action {
+      height: 40px;
+
+      padding: 0 7px;
+
+      display: flex;
+
+      justify-content: center;
+    }
+
+    .action-hotkey,
+    .action-arrow,
+    .action-text small {
+      display: none;
+    }
+
+    .action-text {
+      text-align: center;
+    }
+
+    .action-text strong {
+      font-size: 8px;
+    }
+
+    .action-footer {
+      display: none;
+    }
+
+    .bottom-marking {
+      display: none;
+    }
+  }
+</style>
