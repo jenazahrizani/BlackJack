@@ -16,7 +16,15 @@
 
    No external assets required.
    Everything is designed to be rendered procedurally.
+
+   FIRST-PERSON VISUAL NOTE
+   --------------------------------------------------------------------------
+   CharacterVisual still contains head-related fields for compatibility with
+   the wider game architecture, but the current first-person renderer does
+   not need to draw faces or heads. The renderer may use body / arm / hand
+   fields only.
    ========================================================================== */
+
 
 /* ==========================================================================
    DESIGN / COLORS
@@ -31,7 +39,7 @@ export const COLORS = {
   background: "#050807",
 
   /*
-   * Wood
+   * Wood / casino furniture
    */
   woodDeep: "#100A07",
   wood: "#1A100C",
@@ -104,7 +112,20 @@ export const COLORS = {
 
   warmLight: "rgba(225, 199, 119, 0.12)",
   greenLight: "rgba(35, 104, 78, 0.12)",
+
+  /*
+   * First-person atmosphere
+   */
+  vignette:
+    "rgba(0, 0, 0, 0.48)",
+
+  tableGlow:
+    "rgba(50, 125, 92, 0.08)",
+
+  brassGlow:
+    "rgba(231, 209, 142, 0.08)",
 };
+
 
 /* ==========================================================================
    DESIGN / NUMBERS
@@ -112,16 +133,42 @@ export const COLORS = {
 
 export const DESIGN = {
   /*
-   * Internal game resolution.
-   * The renderer can downsample / upscale this.
+   * Internal logical resolution.
+   *
+   * Renderer may use a much lower internal pixel surface and upscale it.
    */
   logicalWidth: 960,
   logicalHeight: 540,
 
   /*
-   * Pixel scale.
+   * Pixel treatment.
    */
   pixelSize: 2,
+
+  /*
+   * First-person composition.
+   */
+  firstPerson: {
+    horizonY: 0.37,
+
+    tableTopY: 0.54,
+
+    playerCardsY: 0.76,
+
+    dealerCardsY: 0.43,
+
+    playerHandsY: 0.88,
+
+    edgeDarkness: 0.24,
+
+    cameraXLimit: 0.08,
+
+    cameraYLimit: 0.05,
+
+    cameraZoomMin: 0.94,
+
+    cameraZoomMax: 1.08,
+  },
 
   /*
    * Card sizing.
@@ -134,6 +181,11 @@ export const DESIGN = {
 
     shadowOffsetX: 4,
     shadowOffsetY: 5,
+
+    rankInsetX: 7,
+    rankInsetY: 8,
+
+    suitInsetY: 23,
   },
 
   /*
@@ -145,6 +197,8 @@ export const DESIGN = {
     thickness: 7,
 
     stackSpacing: 5,
+
+    edgeWidth: 2,
   },
 
   /*
@@ -159,6 +213,12 @@ export const DESIGN = {
 
     feltWidth: 0.398,
     feltHeight: 0.363,
+
+    railHeight: 0.08,
+
+    foregroundDepth: 0.29,
+
+    horizonDepth: 0.04,
   },
 
   /*
@@ -172,6 +232,58 @@ export const DESIGN = {
 
     shoulderWidth: 67,
     shoulderHeight: 18,
+
+    bodyWidth: 74,
+    bodyHeight: 94,
+
+    handReachDistance: 0.10,
+  },
+
+  /*
+   * Peripheral player composition.
+   */
+  peripheralPlayers: {
+    bodyDepth: 0.13,
+
+    shoulderScale: 1.0,
+
+    handScale: 0.88,
+
+    cropAmount: 0.54,
+
+    leftBias: -0.02,
+
+    rightBias: 0.02,
+  },
+
+  /*
+   * Foreground player presence.
+   */
+  foregroundPlayer: {
+    armWidth: 0.095,
+
+    armLength: 0.30,
+
+    handSize: 0.045,
+
+    y: 0.91,
+
+    opacity: 0.96,
+  },
+
+  /*
+   * Ambient lighting.
+   */
+  lighting: {
+    baseExposure: 0.92,
+
+    warmStrength: 0.12,
+
+    greenStrength: 0.10,
+
+    pulseAmount: 0.035,
+
+    vignetteStrength: 0.52,
   },
 
   /*
@@ -188,7 +300,25 @@ export const DESIGN = {
 
     camera: 0.035,
   },
+
+  /*
+   * Visual depth layers.
+   */
+  depth: {
+    background: 0,
+    architecture: 10,
+    dealer: 20,
+    tableBack: 30,
+    cardsBack: 40,
+    peripheralPlayers: 50,
+    tableFront: 60,
+    cardsFront: 70,
+    chips: 80,
+    foregroundHands: 90,
+    vignette: 100,
+  },
 };
+
 
 /* ==========================================================================
    BASIC TYPES
@@ -303,6 +433,7 @@ export type DealerPose =
   | "collect"
   | "settle";
 
+
 /* ==========================================================================
    VECTOR / TRANSFORM
    ========================================================================== */
@@ -326,6 +457,7 @@ export interface Transform2D {
 
   opacity: number;
 }
+
 
 /* ==========================================================================
    CARD
@@ -359,6 +491,7 @@ export interface Card {
   highlighted: boolean;
 }
 
+
 /* ==========================================================================
    HAND
    ========================================================================== */
@@ -387,6 +520,7 @@ export interface Hand {
   rotation: number;
 }
 
+
 /* ==========================================================================
    CHIP
    ========================================================================== */
@@ -411,6 +545,7 @@ export interface Chip {
   moving: boolean;
 }
 
+
 /* ==========================================================================
    CHIP STACK
    ========================================================================== */
@@ -430,6 +565,7 @@ export interface ChipStack {
 
   visible: boolean;
 }
+
 
 /* ==========================================================================
    PLAYER VISUAL
@@ -454,6 +590,9 @@ export interface CharacterVisual {
 
   /*
    * Head.
+   *
+   * Kept for architecture compatibility.
+   * First-person renderer does not need to draw it.
    */
   headRadius: number;
 
@@ -494,6 +633,7 @@ export interface CharacterVisual {
 
   idleSeed: number;
 }
+
 
 /* ==========================================================================
    PLAYER
@@ -537,6 +677,7 @@ export interface Player {
   eliminated: boolean;
 }
 
+
 /* ==========================================================================
    SEAT
    ========================================================================== */
@@ -563,6 +704,7 @@ export interface Seat {
   state: SeatState;
 }
 
+
 /* ==========================================================================
    DEALER
    ========================================================================== */
@@ -586,7 +728,11 @@ export interface Dealer {
 
   targetPosition: Vec2;
 
-  attention: "deck" | "player" | "table" | "cards";
+  attention:
+    | "deck"
+    | "player"
+    | "table"
+    | "cards";
 
   currentSeat: number | null;
 
@@ -596,6 +742,7 @@ export interface Dealer {
 
   speechUntil: number;
 }
+
 
 /* ==========================================================================
    DECK
@@ -616,6 +763,7 @@ export interface Deck {
 
   shoeCount: number;
 }
+
 
 /* ==========================================================================
    TABLE
@@ -662,6 +810,7 @@ export interface Table {
   surrenderAllowed: boolean;
 }
 
+
 /* ==========================================================================
    CASINO LIGHT
    ========================================================================== */
@@ -683,6 +832,7 @@ export interface CasinoLight {
 
   enabled: boolean;
 }
+
 
 /* ==========================================================================
    ATMOSPHERE PARTICLE
@@ -708,6 +858,7 @@ export interface AtmosphereParticle {
   maxLife: number;
 }
 
+
 /* ==========================================================================
    CAMERA
    ========================================================================== */
@@ -729,6 +880,7 @@ export interface Camera {
 
   shakeY: number;
 }
+
 
 /* ==========================================================================
    ANIMATION
@@ -773,6 +925,7 @@ export interface AnimationTrack {
   reverse: boolean;
 }
 
+
 /* ==========================================================================
    TABLE VISUAL STATE
    ========================================================================== */
@@ -798,6 +951,7 @@ export interface TableVisualState {
 
   chipsVisible: boolean;
 }
+
 
 /* ==========================================================================
    FACTORIES
@@ -825,9 +979,10 @@ export function createTransform(
   };
 }
 
-/* --------------------------------------------------------------------------
-   Card factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   CARD FACTORY
+   ========================================================================== */
 
 export function createCard(
   rank: CardRank,
@@ -836,12 +991,12 @@ export function createCard(
     Omit<Card, "id" | "rank" | "suit" | "value">
   > = {}
 ): Card {
-  const value = getCardValue(
-    rank
-  );
+  const value =
+    getCardValue(rank);
 
   return {
-    id: createId("card"),
+    id:
+      createId("card"),
 
     rank,
 
@@ -885,9 +1040,10 @@ export function createCard(
   };
 }
 
-/* --------------------------------------------------------------------------
-   Chip factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   CHIP FACTORY
+   ========================================================================== */
 
 export function createChip(
   value: number,
@@ -896,7 +1052,8 @@ export function createChip(
   > = {}
 ): Chip {
   return {
-    id: createId("chip"),
+    id:
+      createId("chip"),
 
     value,
 
@@ -932,9 +1089,10 @@ export function createChip(
   };
 }
 
-/* --------------------------------------------------------------------------
-   Hand factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   HAND FACTORY
+   ========================================================================== */
 
 export function createHand(
   id = createId("hand")
@@ -944,36 +1102,46 @@ export function createHand(
 
     cards: [],
 
-    state: "empty",
+    state:
+      "empty",
 
-    value: 0,
+    value:
+      0,
 
-    soft: false,
+    soft:
+      false,
 
-    blackjack: false,
+    blackjack:
+      false,
 
-    busted: false,
+    busted:
+      false,
 
-    bet: 0,
+    bet:
+      0,
 
-    x: 0,
+    x:
+      0,
 
-    y: 0,
+    y:
+      0,
 
-    rotation: 0,
+    rotation:
+      0,
   };
 }
 
-/* --------------------------------------------------------------------------
-   Character factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   CHARACTER FACTORY
+   ========================================================================== */
 
 export function createCharacterVisual(
   options: Partial<CharacterVisual> = {}
 ): CharacterVisual {
   const seed =
-    Math.random() *
-    100000;
+    options.idleSeed ??
+    createVisualSeed();
 
   return {
     position:
@@ -1064,19 +1232,17 @@ export function createCharacterVisual(
 
     blinkTimer:
       options.blinkTimer ??
-      2 +
-
-        Math.random() * 4,
+      2,
 
     idleSeed:
-      options.idleSeed ??
       seed,
   };
 }
 
-/* --------------------------------------------------------------------------
-   Player factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   PLAYER FACTORY
+   ========================================================================== */
 
 export function createPlayer(
   seat: number,
@@ -1084,9 +1250,9 @@ export function createPlayer(
   type: PlayerType = "npc"
 ): Player {
   const presentation =
-    seat % 2 === 0
-      ? "feminine"
-      : "masculine";
+    getPresentationForSeat(
+      seat
+    );
 
   const behavior =
     getDefaultBehavior(
@@ -1094,7 +1260,8 @@ export function createPlayer(
     );
 
   return {
-    id: createId("player"),
+    id:
+      createId("player"),
 
     type,
 
@@ -1102,9 +1269,11 @@ export function createPlayer(
 
     seat,
 
-    state: "waiting",
+    state:
+      "waiting",
 
-    mood: "neutral",
+    mood:
+      "neutral",
 
     behavior,
 
@@ -1113,11 +1282,13 @@ export function createPlayer(
     visual:
       createCharacterVisual({
         jacket:
-          seat === 2
-            ? "#25201D"
-            : seat === 4
-              ? "#1D2630"
-              : COLORS.jacket,
+          getPlayerJacket(
+            seat
+          ),
+
+        breathingOffset:
+          seat *
+          0.13,
       }),
 
     hand:
@@ -1129,70 +1300,95 @@ export function createPlayer(
       null,
 
     chips: {
-      id: createId(
-        "stack"
-      ),
+      id:
+        createId("stack"),
 
-      x: 0,
+      x:
+        0,
 
-      y: 0,
+      y:
+        0,
 
       chips: [],
 
-      total: 0,
+      total:
+        0,
 
-      rotation: 0,
+      rotation:
+        0,
 
-      visible: true,
+      visible:
+        true,
     },
 
-    balance: 1000,
+    balance:
+      1000,
 
-    bet: 0,
+    bet:
+      0,
 
-    wins: 0,
+    wins:
+      0,
 
-    losses: 0,
+    losses:
+      0,
 
-    active: true,
+    active:
+      true,
 
-    eliminated: false,
+    eliminated:
+      false,
   };
 }
 
-/* --------------------------------------------------------------------------
-   Dealer factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   DEALER FACTORY
+   ========================================================================== */
 
 export function createDealer(
   name = "EMMA"
 ): Dealer {
   return {
-    id: createId(
-      "dealer"
-    ),
+    id:
+      createId("dealer"),
 
     name,
 
-    state: "idle",
+    state:
+      "idle",
 
-    pose: "neutral",
+    pose:
+      "neutral",
 
-    mood: "neutral",
+    mood:
+      "neutral",
 
     visual:
       createCharacterVisual({
-        bodyWidth: 74,
-        bodyHeight: 94,
-        headRadius: 23,
+        bodyWidth:
+          DESIGN.dealer.bodyWidth,
 
-        skin: COLORS.skin,
+        bodyHeight:
+          DESIGN.dealer.bodyHeight,
 
-        hair: COLORS.hairBlack,
+        headRadius:
+          DESIGN.dealer.headRadiusX,
 
-        shirt: COLORS.shirt,
+        skin:
+          COLORS.skin,
 
-        jacket: COLORS.jacket,
+        hair:
+          COLORS.hairBlack,
+
+        shirt:
+          COLORS.shirt,
+
+        jacket:
+          COLORS.jacket,
+
+        breathingOffset:
+          0,
       }),
 
     hand:
@@ -1201,31 +1397,42 @@ export function createDealer(
       ),
 
     position: {
-      x: 0.5,
-      y: DESIGN.dealer.y,
+      x:
+        0.5,
+
+      y:
+        DESIGN.dealer.y,
     },
 
     targetPosition: {
-      x: 0.5,
-      y: DESIGN.dealer.y,
+      x:
+        0.5,
+
+      y:
+        DESIGN.dealer.y,
     },
 
-    attention: "table",
+    attention:
+      "table",
 
     currentSeat:
       null,
 
-    speaking: false,
+    speaking:
+      false,
 
-    speechText: "",
+    speechText:
+      "",
 
-    speechUntil: 0,
+    speechUntil:
+      0,
   };
 }
 
-/* --------------------------------------------------------------------------
-   Seat factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   SEAT FACTORY
+   ========================================================================== */
 
 export function createSeat(
   id: number
@@ -1238,32 +1445,44 @@ export function createSeat(
   return {
     id,
 
-    x: normalized.x,
+    x:
+      normalized.x,
 
-    y: normalized.y,
+    y:
+      normalized.y,
 
-    angle: normalized.angle,
+    angle:
+      normalized.angle,
 
-    radius: normalized.radius,
+    radius:
+      normalized.radius,
 
-    occupied: false,
+    occupied:
+      false,
 
-    active: false,
+    active:
+      false,
 
-    playerId: null,
+    playerId:
+      null,
 
     label:
       `SEAT ${String(
         id
-      ).padStart(2, "0")}`,
+      ).padStart(
+        2,
+        "0"
+      )}`,
 
-    state: "empty",
+    state:
+      "empty",
   };
 }
 
-/* --------------------------------------------------------------------------
-   Table factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   TABLE FACTORY
+   ========================================================================== */
 
 export function createTable(
   options: Partial<Table> = {}
@@ -1271,19 +1490,19 @@ export function createTable(
   return {
     x:
       options.x ??
-      0.5,
+      DESIGN.table.centerX,
 
     y:
       options.y ??
-      0.61,
+      DESIGN.table.centerY,
 
     width:
       options.width ??
-      0.92,
+      DESIGN.table.width,
 
     height:
       options.height ??
-      0.68,
+      DESIGN.table.height,
 
     rotation:
       options.rotation ??
@@ -1299,7 +1518,7 @@ export function createTable(
 
     dealerRailHeight:
       options.dealerRailHeight ??
-      0.08,
+      DESIGN.table.railHeight,
 
     bettingAreaY:
       options.bettingAreaY ??
@@ -1343,13 +1562,22 @@ export function createTable(
   };
 }
 
-/* --------------------------------------------------------------------------
-   Deck factory
-   -------------------------------------------------------------------------- */
+
+/* ==========================================================================
+   DECK FACTORY
+   ========================================================================== */
 
 export function createDeck(
   decks = 6
 ): Deck {
+  const safeDeckCount =
+    Math.max(
+      1,
+      Math.floor(
+        decks
+      )
+    );
+
   const cards: Card[] = [];
 
   const suits: Suit[] = [
@@ -1377,8 +1605,9 @@ export function createDeck(
 
   for (
     let deckIndex = 0;
-    deckIndex < decks;
-    deckIndex++
+    deckIndex <
+    safeDeckCount;
+    deckIndex += 1
   ) {
     for (
       const suit of suits
@@ -1397,33 +1626,51 @@ export function createDeck(
   }
 
   /*
-   * Put cards physically at deck position.
+   * Put cards physically at shoe position.
+   *
+   * The renderer can use:
+   * - position
+   * - zIndex
+   * - slight rotation
+   *
+   * to create a layered shoe.
    */
   cards.forEach(
     (
       card,
       index
     ) => {
-      card.state = "deck";
+      card.state =
+        "deck";
 
-      card.faceUp = false;
+      card.faceUp =
+        false;
 
       card.transform =
         createTransform(
           0,
           index * -0.04,
-          (index % 2 === 0
-            ? -1
-            : 1) *
+          (
+            index % 2 ===
+            0
+              ? -1
+              : 1
+          ) *
             0.008,
           1,
           1
         );
 
       card.target = {
-        x: 0,
-        y: 0,
+        x:
+          0,
+
+        y:
+          0,
       };
+
+      card.targetRotation =
+        card.transform.rotation;
 
       card.zIndex =
         index;
@@ -1433,24 +1680,35 @@ export function createDeck(
   return {
     cards,
 
+    /*
+     * Deck is placed toward dealer's right side
+     * from the player's first-person perspective.
+     */
     position: {
-      x: 0.57,
-      y: 0.39,
+      x:
+        0.57,
+
+      y:
+        0.39,
     },
 
-    rotation: 0,
+    rotation:
+      0,
 
-    visibleCards: 4,
+    visibleCards:
+      4,
 
     remaining:
       cards.length,
 
-    discardCount: 0,
+    discardCount:
+      0,
 
     shoeCount:
-      decks,
+      safeDeckCount,
   };
 }
+
 
 /* ==========================================================================
    GAME / VISUAL STATE FACTORY
@@ -1460,7 +1718,8 @@ export function createTableVisualState(): TableVisualState {
   const seats =
     Array.from(
       {
-        length: 5,
+        length:
+          5,
       },
       (_, index) =>
         createSeat(
@@ -1468,7 +1727,7 @@ export function createTableVisualState(): TableVisualState {
         )
     );
 
-  const players = [
+  const players: Player[] = [
     createPlayer(
       1,
       "MICHAEL"
@@ -1500,10 +1759,14 @@ export function createTableVisualState(): TableVisualState {
    * Connect players to seats.
    */
   players.forEach(
-    (player) => {
+    (
+      player
+    ) => {
       const seat =
         seats.find(
-          (item) =>
+          (
+            item
+          ) =>
             item.id ===
             player.seat
         );
@@ -1529,11 +1792,13 @@ export function createTableVisualState(): TableVisualState {
   );
 
   /*
-   * Human player's seat active.
+   * Human player occupies the central seat.
    */
   const human =
     players.find(
-      (player) =>
+      (
+        player
+      ) =>
         player.type ===
         "human"
     );
@@ -1541,13 +1806,16 @@ export function createTableVisualState(): TableVisualState {
   if (human) {
     const seat =
       seats.find(
-        (item) =>
+        (
+          item
+        ) =>
           item.id ===
           human.seat
       );
 
     if (seat) {
-      seat.active = true;
+      seat.active =
+        true;
 
       seat.state =
         "playing";
@@ -1560,15 +1828,63 @@ export function createTableVisualState(): TableVisualState {
     }
   }
 
+  const table =
+    createTable();
+
+  const dealer =
+    createDealer();
+
+  const deck =
+    createDeck(
+      6
+    );
+
+  /*
+   * Initial dealer visual placement.
+   */
+  dealer.position = {
+    x:
+      0.5,
+
+    y:
+      DESIGN.dealer.y,
+  };
+
+  dealer.targetPosition = {
+    x:
+      0.5,
+
+    y:
+      DESIGN.dealer.y,
+  };
+
+  /*
+   * Initial hand states.
+   */
+  players.forEach(
+    (
+      player
+    ) => {
+      player.hand.x =
+        player.visual.position.x;
+
+      player.hand.y =
+        player.visual.position.y -
+        0.055;
+
+      player.hand.rotation =
+        seatRotation(
+          player.seat
+        );
+    }
+  );
+
   return {
-    table:
-      createTable(),
+    table,
 
-    dealer:
-      createDealer(),
+    dealer,
 
-    deck:
-      createDeck(6),
+    deck,
 
     seats,
 
@@ -1582,13 +1898,17 @@ export function createTableVisualState(): TableVisualState {
       human?.seat ??
       3,
 
-    bettingOpen: true,
+    bettingOpen:
+      true,
 
-    cardsVisible: true,
+    cardsVisible:
+      true,
 
-    chipsVisible: true,
+    chipsVisible:
+      true,
   };
 }
+
 
 /* ==========================================================================
    CARD UTILITIES
@@ -1597,7 +1917,9 @@ export function createTableVisualState(): TableVisualState {
 export function getCardValue(
   rank: CardRank
 ): number {
-  switch (rank) {
+  switch (
+    rank
+  ) {
     case "A":
       return 11;
 
@@ -1613,21 +1935,25 @@ export function getCardValue(
   }
 }
 
+
 export function getSuitColor(
   suit: Suit
 ): string {
-  return suit ===
-    "hearts" ||
-    suit ===
-      "diamonds"
+  return (
+    suit === "hearts" ||
+    suit === "diamonds"
+  )
     ? COLORS.red
     : COLORS.blackSuit;
 }
 
+
 export function getSuitGlyph(
   suit: Suit
 ): string {
-  switch (suit) {
+  switch (
+    suit
+  ) {
     case "spades":
       return "♠";
 
@@ -1641,6 +1967,7 @@ export function getSuitGlyph(
       return "♣";
   }
 }
+
 
 /* ==========================================================================
    CHIP UTILITIES
@@ -1668,10 +1995,13 @@ export function getChipColor(
   return "gold";
 }
 
+
 export function getChipHex(
   color: ChipColor
 ): string {
-  switch (color) {
+  switch (
+    color
+  ) {
     case "red":
       return COLORS.chipRed;
 
@@ -1692,6 +2022,7 @@ export function getChipHex(
   }
 }
 
+
 /* ==========================================================================
    SEAT UTILITIES
    ========================================================================== */
@@ -1704,65 +2035,192 @@ export function getSeatPosition(
   angle: number;
   radius: number;
 } {
-  switch (seat) {
+  switch (
+    seat
+  ) {
     case 1:
       return {
-        x: 0.16,
-        y: 0.70,
-        angle: -0.08,
-        radius: 0.04,
+        x:
+          0.16,
+
+        y:
+          0.70,
+
+        angle:
+          -0.08,
+
+        radius:
+          0.04,
       };
 
     case 2:
       return {
-        x: 0.31,
-        y: 0.75,
-        angle: -0.04,
-        radius: 0.035,
+        x:
+          0.31,
+
+        y:
+          0.75,
+
+        angle:
+          -0.04,
+
+        radius:
+          0.035,
       };
 
     case 3:
       return {
-        x: 0.50,
-        y: 0.79,
-        angle: 0,
-        radius: 0.04,
+        x:
+          0.50,
+
+        y:
+          0.79,
+
+        angle:
+          0,
+
+        radius:
+          0.04,
       };
 
     case 4:
       return {
-        x: 0.69,
-        y: 0.75,
-        angle: 0.04,
-        radius: 0.035,
+        x:
+          0.69,
+
+        y:
+          0.75,
+
+        angle:
+          0.04,
+
+        radius:
+          0.035,
       };
 
     case 5:
       return {
-        x: 0.84,
-        y: 0.70,
-        angle: 0.08,
-        radius: 0.04,
+        x:
+          0.84,
+
+        y:
+          0.70,
+
+        angle:
+          0.08,
+
+        radius:
+          0.04,
       };
 
     default:
       return {
-        x: 0.5,
-        y: 0.78,
-        angle: 0,
-        radius: 0.04,
+        x:
+          0.5,
+
+        y:
+          0.78,
+
+        angle:
+          0,
+
+        radius:
+          0.04,
       };
   }
 }
+
 
 export function seatToCharacterPosition(
   seat: Seat
 ): Vec2 {
   return {
-    x: seat.x,
-    y: seat.y - 0.075,
+    x:
+      seat.x,
+
+    y:
+      seat.y -
+      0.075,
   };
 }
+
+
+export function seatRotation(
+  seat: number
+): number {
+  switch (
+    seat
+  ) {
+    case 1:
+      return -0.08;
+
+    case 2:
+      return -0.04;
+
+    case 3:
+      return 0;
+
+    case 4:
+      return 0.04;
+
+    case 5:
+      return 0.08;
+
+    default:
+      return 0;
+  }
+}
+
+
+/* ==========================================================================
+   PLAYER VISUAL UTILITIES
+   ========================================================================== */
+
+export function getPresentationForSeat(
+  seat: number
+): GenderPresentation {
+  switch (
+    seat
+  ) {
+    case 2:
+    case 5:
+      return "feminine";
+
+    case 1:
+    case 4:
+      return "masculine";
+
+    case 3:
+    default:
+      return "neutral";
+  }
+}
+
+
+export function getPlayerJacket(
+  seat: number
+): string {
+  switch (
+    seat
+  ) {
+    case 2:
+      return "#25201D";
+
+    case 4:
+      return "#1D2630";
+
+    case 1:
+      return "#171C19";
+
+    case 5:
+      return "#20231F";
+
+    case 3:
+    default:
+      return COLORS.jacket;
+  }
+}
+
 
 /* ==========================================================================
    BEHAVIOR UTILITIES
@@ -1771,7 +2229,9 @@ export function seatToCharacterPosition(
 export function getDefaultBehavior(
   seat: number
 ): PlayerBehavior {
-  switch (seat) {
+  switch (
+    seat
+  ) {
     case 1:
       return "conservative";
 
@@ -1792,6 +2252,7 @@ export function getDefaultBehavior(
   }
 }
 
+
 /* ==========================================================================
    ID
    ========================================================================== */
@@ -1801,10 +2262,31 @@ let entityCounter = 0;
 export function createId(
   prefix: string
 ): string {
-  entityCounter += 1;
+  entityCounter +=
+    1;
 
-  return `${prefix}-${Date.now().toString(36)}-${entityCounter.toString(36)}`;
+  return (
+    `${prefix}-` +
+    `${Date.now().toString(36)}-` +
+    `${entityCounter.toString(36)}`
+  );
 }
+
+
+/* ==========================================================================
+   VISUAL SEED
+   ========================================================================== */
+
+export function createVisualSeed(): number {
+  /*
+   * Keep the visual seed bounded and easy to use in procedural renderers.
+   */
+  return Math.floor(
+    Math.random() *
+      1_000_000
+  );
+}
+
 
 /* ==========================================================================
    MATH
@@ -1824,6 +2306,7 @@ export function clamp(
   );
 }
 
+
 export function lerp(
   a: number,
   b: number,
@@ -1834,6 +2317,7 @@ export function lerp(
     (b - a) * t
   );
 }
+
 
 export function smoothstep(
   t: number
@@ -1851,6 +2335,7 @@ export function smoothstep(
     (3 - 2 * x)
   );
 }
+
 
 export function easeOutCubic(
   t: number
@@ -1871,6 +2356,7 @@ export function easeOutCubic(
   );
 }
 
+
 export function easeInOutCubic(
   t: number
 ): number {
@@ -1881,8 +2367,12 @@ export function easeInOutCubic(
       1
     );
 
-  return x < 0.5
-    ? 4 * x * x * x
+  return x <
+    0.5
+    ? 4 *
+        x *
+        x *
+        x
     : 1 -
         Math.pow(
           -2 * x + 2,
@@ -1890,6 +2380,7 @@ export function easeInOutCubic(
         ) /
           2;
 }
+
 
 /* ==========================================================================
    VECTOR HELPERS
@@ -1911,6 +2402,7 @@ export function distance(
   );
 }
 
+
 export function angleBetween(
   a: Vec2,
   b: Vec2
@@ -1921,25 +2413,29 @@ export function angleBetween(
   );
 }
 
+
 export function lerpVec2(
   a: Vec2,
   b: Vec2,
   t: number
 ): Vec2 {
   return {
-    x: lerp(
-      a.x,
-      b.x,
-      t
-    ),
+    x:
+      lerp(
+        a.x,
+        b.x,
+        t
+      ),
 
-    y: lerp(
-      a.y,
-      b.y,
-      t
-    ),
+    y:
+      lerp(
+        a.y,
+        b.y,
+        t
+      ),
   };
 }
+
 
 /* ==========================================================================
    VISUAL HELPERS
@@ -1981,27 +2477,129 @@ export function normalizeCardRank(
   }
 }
 
+
 /* ==========================================================================
-   DEBUG / RESET HELPERS
+   HAND VALUE HELPER
+   --------------------------------------------------------------------------
+   Useful for later blackjack logic and visual state updates.
+   ========================================================================== */
+
+export function calculateHandValue(
+  cards: Card[]
+): {
+  value: number;
+  soft: boolean;
+  blackjack: boolean;
+  busted: boolean;
+} {
+  let value =
+    0;
+
+  let aces =
+    0;
+
+  for (
+    const card of cards
+  ) {
+    value +=
+      card.value;
+
+    if (
+      card.rank ===
+      "A"
+    ) {
+      aces +=
+        1;
+    }
+  }
+
+  while (
+    value > 21 &&
+    aces > 0
+  ) {
+    value -=
+      10;
+
+    aces -=
+      1;
+  }
+
+  const soft =
+    cards.some(
+      (
+        card
+      ) =>
+        card.rank ===
+        "A"
+    ) &&
+    value <= 21 &&
+    cards.reduce(
+      (
+        total,
+        card
+      ) =>
+        total +
+        card.value,
+      0
+    ) !== value;
+
+  const blackjack =
+    cards.length ===
+      2 &&
+    value ===
+      21;
+
+  return {
+    value,
+
+    soft,
+
+    blackjack,
+
+    busted:
+      value > 21,
+  };
+}
+
+
+/* ==========================================================================
+   RESET HELPERS
    ========================================================================== */
 
 export function resetHand(
   hand: Hand
 ) {
-  hand.cards = [];
+  hand.cards =
+    [];
 
-  hand.state = "empty";
+  hand.state =
+    "empty";
 
-  hand.value = 0;
+  hand.value =
+    0;
 
-  hand.soft = false;
+  hand.soft =
+    false;
 
-  hand.blackjack = false;
+  hand.blackjack =
+    false;
 
-  hand.busted = false;
+  hand.busted =
+    false;
 
-  hand.bet = 0;
+  hand.bet =
+    0;
+
+  hand.x =
+    0;
+
+  hand.y =
+    0;
+
+  hand.rotation =
+    0;
 }
+
 
 export function resetPlayer(
   player: Player
@@ -2021,7 +2619,8 @@ export function resetPlayer(
   player.secondaryHand =
     null;
 
-  player.bet = 0;
+  player.bet =
+    0;
 
   player.state =
     "waiting";
@@ -2031,85 +2630,61 @@ export function resetPlayer(
 
   player.active =
     true;
+
+  player.eliminated =
+    false;
 }
+
 
 /* ==========================================================================
-   FACTORY: COMPLETE CASINO
+   CHIP STACK FACTORY
    ========================================================================== */
-
-export function createCasinoScene(): TableVisualState {
-  const scene =
-    createTableVisualState();
-
-  /*
-   * Initial player chip stacks.
-   */
-  scene.players.forEach(
-    (player, index) => {
-      const defaultBet =
-        index === 2
-          ? 25
-          : index % 2 === 0
-            ? 15
-            : 10;
-
-      player.bet =
-        defaultBet;
-
-      player.chips =
-        createChipStack(
-          defaultBet,
-          player.visual.position.x,
-          player.visual.position.y +
-            0.045
-        );
-    }
-  );
-
-  /*
-   * Dealer starts with cards hidden / empty.
-   */
-  scene.dealer.hand =
-    createHand(
-      "dealer-hand"
-    );
-
-  return scene;
-}
-
-/* --------------------------------------------------------------------------
-   Chip stack factory
-   -------------------------------------------------------------------------- */
 
 export function createChipStack(
   amount: number,
   x = 0,
   y = 0
 ): ChipStack {
-  const denominations =
-    [
-      {
-        value: 100,
-        count: 0,
-      },
-      {
-        value: 25,
-        count: 0,
-      },
-      {
-        value: 5,
-        count: 0,
-      },
-      {
-        value: 1,
-        count: 0,
-      },
-    ];
+  const denominations = [
+    {
+      value:
+        100,
+
+      count:
+        0,
+    },
+
+    {
+      value:
+        25,
+
+      count:
+        0,
+    },
+
+    {
+      value:
+        5,
+
+      count:
+        0,
+    },
+
+    {
+      value:
+        1,
+
+      count:
+        0,
+    },
+  ];
 
   let remaining =
     Math.max(
       0,
-      Math.floor(amount)
+      Math.floor(
+        amount
+      )
     );
 
   for (
@@ -2132,7 +2707,8 @@ export function createChipStack(
     }
   }
 
-  const chips: Chip[] = [];
+  const chips: Chip[] =
+    [];
 
   for (
     const denomination of
@@ -2142,38 +2718,54 @@ export function createChipStack(
       let i = 0;
       i <
       denomination.count;
-      i++
+      i += 1
     ) {
+      const index =
+        chips.length;
+
+      const horizontalOffset =
+        (
+          index %
+          2
+        ) *
+        0.003;
+
+      const verticalOffset =
+        index *
+        0.004;
+
+      const rotation =
+        (
+          index %
+            2 ===
+          0
+            ? -1
+            : 1
+        ) *
+        0.03;
+
       const chip =
         createChip(
           denomination.value,
           {
             stackIndex:
-              chips.length,
+              index,
           }
         );
 
       chip.transform =
         createTransform(
           x +
-            (
-              chips.length %
-                2
-            ) *
-              0.003,
+            horizontalOffset,
 
           y -
-            chips.length *
-              0.004,
+            verticalOffset,
 
-          (
-            chips.length %
-              2 ===
-            0
-              ? -1
-              : 1
-          ) *
-            0.03
+          rotation,
+
+          1,
+
+          1
         );
 
       chip.target = {
@@ -2185,6 +2777,9 @@ export function createChipStack(
           chip.transform
             .position.y,
       };
+
+      chip.targetRotation =
+        rotation;
 
       chips.push(
         chip
@@ -2204,13 +2799,104 @@ export function createChipStack(
 
     chips,
 
-    total: amount,
+    total:
+      amount,
 
-    rotation: 0,
+    rotation:
+      0,
 
-    visible: true,
+    visible:
+      true,
   };
 }
+
+
+/* ==========================================================================
+   FACTORY: COMPLETE CASINO
+   ========================================================================== */
+
+export function createCasinoScene(): TableVisualState {
+  const scene =
+    createTableVisualState();
+
+  /*
+   * Initial player chip stacks.
+   */
+  scene.players.forEach(
+    (
+      player,
+      index
+    ) => {
+      const defaultBet =
+        index === 2
+          ? 25
+          : index % 2 ===
+              0
+            ? 15
+            : 10;
+
+      player.bet =
+        defaultBet;
+
+      player.hand.bet =
+        defaultBet;
+
+      player.chips =
+        createChipStack(
+          defaultBet,
+
+          player.visual.position.x,
+
+          player.visual.position.y +
+            0.045
+        );
+
+      player.chips.rotation =
+        seatRotation(
+          player.seat
+        );
+    }
+  );
+
+  /*
+   * Dealer begins without visible cards.
+   */
+  scene.dealer.hand =
+    createHand(
+      "dealer-hand"
+    );
+
+  scene.dealer.hand.x =
+    scene.dealer.position.x;
+
+  scene.dealer.hand.y =
+    scene.dealer.position.y +
+    0.09;
+
+  scene.dealer.hand.rotation =
+    0;
+
+  /*
+   * Empty initial player hands.
+   */
+  scene.players.forEach(
+    (
+      player
+    ) => {
+      player.hand.state =
+        "empty";
+
+      player.hand.cards =
+        [];
+
+      player.secondaryHand =
+        null;
+    }
+  );
+
+  return scene;
+}
+
 
 /* ==========================================================================
    EXPORT DEFAULT COLOR / CONFIG PACKAGE

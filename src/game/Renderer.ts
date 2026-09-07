@@ -2,37 +2,47 @@ import type { GameVisualState } from "./Game";
 
 import {
   COLORS,
-  DESIGN,
   getSuitGlyph,
   getSuitColor,
+  getChipHex,
+  type Card,
+  type Hand,
+  type Player,
 } from "./Entities";
 
+
 /* ==========================================================================
-   BLACKJACK 21 — CASINO RENDERER
+   BLACKJACK 21 — FIRST PERSON PIXEL CASINO RENDERER
 
-   Procedural Canvas 2D renderer.
+   Visual direction
+   --------------------------------------------------------------------------
+   - First-person point of view.
+   - Player is physically seated at the table.
+   - Dealer is visible without head / face.
+   - Other players are visible only through body / sleeves / hands.
+   - Entire scene is procedurally rendered.
+   - Entire scene is rendered internally at low resolution.
+   - Final output is nearest-neighbor pixel scaling.
+   - Real Blackjack state drives cards / chips / active player.
 
-   No image assets.
-   No external textures.
-   No PNG/JPG dependencies.
+   Renderer responsibilities
+   --------------------------------------------------------------------------
+   - Environment
+   - Table
+   - Dealer body
+   - Player silhouettes
+   - Actual cards
+   - Actual chips
+   - Table markings
+   - Result atmosphere
+   - Pixel treatment
 
-   Rendering order:
-   01. Casino background
-   02. Background atmosphere
-   03. Table shadow
-   04. Wooden table body
-   05. Gold trim
-   06. Felt
-   07. Table markings
-   08. Dealer body
-   09. Dealer arms / hands
-   10. Other players
-   11. Deck
-   12. Dealer cards
-   13. Player cards
-   14. Chips
-   15. Foreground light / vignette
-   16. Pixel treatment
+   Renderer does NOT decide gameplay rules.
+   ========================================================================== */
+
+
+/* ==========================================================================
+   LOCAL TYPES
    ========================================================================== */
 
 type Suit =
@@ -41,7 +51,10 @@ type Suit =
   | "diamonds"
   | "clubs";
 
+
 type CardVisual = {
+  card?: Card;
+
   rank: string;
   suit: Suit;
 
@@ -56,7 +69,12 @@ type CardVisual = {
   faceUp: boolean;
 
   shadow?: boolean;
+
+  emphasis?: boolean;
+
+  opacity?: number;
 };
+
 
 type ChipVisual = {
   value: number;
@@ -68,66 +86,120 @@ type ChipVisual = {
 
   rotation: number;
 
-  color?: string;
+  color: string;
+
+  stackIndex?: number;
 };
 
-type SeatVisual = {
-  x: number;
-  y: number;
 
-  occupied: boolean;
-  active: boolean;
+/* ==========================================================================
+   CONSTANTS
+   ========================================================================== */
 
-  name: string;
-};
+const TAU =
+  Math.PI * 2;
 
-const TAU = Math.PI * 2;
 
 const FONT = {
-  tiny: "700 8px 'Courier New', monospace",
-  small: "700 10px 'Courier New', monospace",
-  medium: "700 13px 'Courier New', monospace",
-  large: "700 20px 'Courier New', monospace",
+  tiny:
+    "700 6px 'Courier New', monospace",
+
+  small:
+    "700 7px 'Courier New', monospace",
+
+  medium:
+    "700 9px 'Courier New', monospace",
+
+  large:
+    "700 14px 'Courier New', monospace",
 };
 
+
+/* ==========================================================================
+   RENDERER
+   ========================================================================== */
+
 export class Renderer {
-  readonly canvas: HTMLCanvasElement;
-  readonly ctx: CanvasRenderingContext2D;
 
-  width = 0;
-  height = 0;
+  /* ========================================================================
+     PUBLIC CANVAS
+     ======================================================================== */
 
-  private time = 0;
-  private delta = 0;
+  readonly canvas:
+    HTMLCanvasElement;
 
-  private state: GameVisualState | null = null;
+  readonly ctx:
+    CanvasRenderingContext2D;
 
-  /*
-   * Low-resolution procedural render target.
-   */
-  private internalCanvas: HTMLCanvasElement;
-  private internalCtx: CanvasRenderingContext2D;
 
-  /*
-   * Calculated layout values.
-   */
-  private tableScale = 1;
+  /* ========================================================================
+     OUTPUT SIZE
+     ======================================================================== */
 
-  private tableCenterX = 0;
-  private tableCenterY = 0;
+  width =
+    0;
 
-  private tableWidth = 0;
-  private tableHeight = 0;
+  height =
+    0;
 
-  /*
-   * Deterministic procedural texture seed.
-   */
-  private seed = 872341;
 
-  /*
-   * Actual display device pixel ratio.
-   */
-  private dpr = 1;
+  /* ========================================================================
+     INTERNAL TIME
+     ======================================================================== */
+
+  private time =
+    0;
+
+  private delta =
+    0;
+
+
+  /* ========================================================================
+     CURRENT STATE
+     ======================================================================== */
+
+  private state:
+    GameVisualState | null =
+    null;
+
+
+  /* ========================================================================
+     INTERNAL LOW-RES CANVAS
+     ======================================================================== */
+
+  private internalCanvas:
+    HTMLCanvasElement;
+
+  private internalCtx:
+    CanvasRenderingContext2D;
+
+
+  /* ========================================================================
+     DEVICE PIXEL RATIO
+     ======================================================================== */
+
+  private dpr =
+    1;
+
+
+  /* ========================================================================
+     PROCEDURAL SEED
+     ======================================================================== */
+
+  private seed =
+    872341;
+
+
+  /* ========================================================================
+     INTERNAL RESOLUTION
+     ======================================================================== */
+
+  private sceneWidth =
+    480;
+
+  private sceneHeight =
+    270;
+
 
   /* ========================================================================
      CONSTRUCTOR
@@ -136,16 +208,22 @@ export class Renderer {
   constructor(
     canvas: HTMLCanvasElement
   ) {
-    this.canvas = canvas;
+    this.canvas =
+      canvas;
+
 
     const ctx =
       canvas.getContext(
         "2d",
         {
-          alpha: false,
-          desynchronized: true,
+          alpha:
+            false,
+
+          desynchronized:
+            true,
         }
       );
+
 
     if (!ctx) {
       throw new Error(
@@ -153,27 +231,33 @@ export class Renderer {
       );
     }
 
-    this.ctx = ctx;
+
+    this.ctx =
+      ctx;
+
 
     this.ctx.imageSmoothingEnabled =
       false;
 
-    /*
-     * Internal scene.
-     */
+
     this.internalCanvas =
       document.createElement(
         "canvas"
       );
 
+
     const internalCtx =
       this.internalCanvas.getContext(
         "2d",
         {
-          alpha: false,
-          desynchronized: true,
+          alpha:
+            false,
+
+          desynchronized:
+            true,
         }
       );
+
 
     if (!internalCtx) {
       throw new Error(
@@ -181,40 +265,58 @@ export class Renderer {
       );
     }
 
+
     this.internalCtx =
       internalCtx;
+
 
     this.internalCtx.imageSmoothingEnabled =
       false;
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
      RESIZE
-     ======================================================================== */
+     ========================================================================== */
 
   resize(
     width: number,
     height: number
-  ) {
+  ): void {
+
     this.width =
       Math.max(
         1,
-        Math.floor(width)
+        Math.floor(
+          Number.isFinite(
+            width
+          )
+            ? width
+            : 1
+        )
       );
+
 
     this.height =
       Math.max(
         1,
-        Math.floor(height)
+        Math.floor(
+          Number.isFinite(
+            height
+          )
+            ? height
+            : 1
+        )
       );
 
-    /*
-     * Clamp device pixel ratio.
-     */
+
     const deviceDpr =
-      typeof window !== "undefined"
-        ? window.devicePixelRatio || 1
+      typeof window !==
+        "undefined"
+        ? window.devicePixelRatio ||
+          1
         : 1;
+
 
     this.dpr =
       Math.min(
@@ -225,9 +327,11 @@ export class Renderer {
         2
       );
 
-    /*
-     * Real canvas backing resolution.
-     */
+
+    /* ----------------------------------------------------------------------
+       PHYSICAL CANVAS
+       ---------------------------------------------------------------------- */
+
     this.canvas.width =
       Math.max(
         1,
@@ -236,6 +340,7 @@ export class Renderer {
             this.dpr
         )
       );
+
 
     this.canvas.height =
       Math.max(
@@ -246,15 +351,15 @@ export class Renderer {
         )
       );
 
+
     this.canvas.style.width =
       `${this.width}px`;
+
 
     this.canvas.style.height =
       `${this.height}px`;
 
-    /*
-     * CSS-pixel drawing coordinates.
-     */
+
     this.ctx.setTransform(
       this.dpr,
       0,
@@ -264,54 +369,73 @@ export class Renderer {
       0
     );
 
+
     this.ctx.imageSmoothingEnabled =
       false;
 
-    /*
-     * Internal resolution.
-     */
-    const targetAspect =
-      DESIGN.logicalWidth /
-      Math.max(
-        DESIGN.logicalHeight,
-        1
-      );
 
-    const currentAspect =
+    /* ----------------------------------------------------------------------
+       INTERNAL RESOLUTION
+       ---------------------------------------------------------------------- */
+
+    const aspect =
       this.width /
       Math.max(
         this.height,
         1
       );
 
-    let internalWidth =
-      480;
-
-    let internalHeight =
-      270;
 
     if (
-      currentAspect < 1.35
+      aspect <
+      1.2
     ) {
-      internalWidth = 400;
-      internalHeight = 300;
+
+      this.sceneWidth =
+        360;
+
+      this.sceneHeight =
+        300;
+
     } else if (
-      currentAspect < 1.55
+      aspect <
+      1.45
     ) {
-      internalWidth = 448;
-      internalHeight = 280;
+
+      this.sceneWidth =
+        400;
+
+      this.sceneHeight =
+        300;
+
     } else if (
-      currentAspect > targetAspect
+      aspect <
+      1.7
     ) {
-      internalWidth = 512;
-      internalHeight = 288;
+
+      this.sceneWidth =
+        448;
+
+      this.sceneHeight =
+        280;
+
+    } else {
+
+      this.sceneWidth =
+        480;
+
+      this.sceneHeight =
+        270;
     }
 
+
     this.internalCanvas.width =
-      internalWidth;
+      this.sceneWidth;
+
 
     this.internalCanvas.height =
-      internalHeight;
+      this.sceneHeight;
+
 
     this.internalCtx.setTransform(
       1,
@@ -322,112 +446,82 @@ export class Renderer {
       0
     );
 
+
     this.internalCtx.imageSmoothingEnabled =
       false;
-
-    this.calculateTableLayout();
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
      UPDATE
-     ======================================================================== */
+     ========================================================================== */
 
   update(
     delta: number,
     state?: GameVisualState
-  ) {
+  ): void {
+
     this.delta =
-      Number.isFinite(delta)
-        ? Math.max(
-            0,
-            delta
+      Number.isFinite(
+        delta
+      )
+        ? Math.min(
+            Math.max(
+              delta,
+              0
+            ),
+            0.05
           )
         : 0;
+
 
     this.time +=
       this.delta;
 
-    if (state) {
-      this.state = state;
-    }
-
-    this.calculateTableLayout();
-  }
-
-  /* ========================================================================
-     LAYOUT
-     ======================================================================== */
-
-  private calculateTableLayout() {
-    const aspect =
-      this.width /
-      Math.max(
-        this.height,
-        1
-      );
 
     if (
-      aspect >= 1.65
+      state
     ) {
-      this.tableScale = 1;
-    } else if (
-      aspect >= 1.4
-    ) {
-      this.tableScale = 0.94;
-    } else {
-      this.tableScale = 0.78;
+      this.state =
+        state;
     }
-
-    this.tableCenterX =
-      this.width *
-      0.5;
-
-    this.tableCenterY =
-      this.height *
-      0.61;
-
-    this.tableWidth =
-      Math.min(
-        this.width *
-          0.92,
-        1460
-      ) *
-      this.tableScale;
-
-    this.tableHeight =
-      Math.min(
-        this.height *
-          0.67,
-        620
-      ) *
-      this.tableScale;
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
      MAIN RENDER
-     ======================================================================== */
+     ========================================================================== */
 
   render(
     state?: GameVisualState
-  ) {
-    if (state) {
-      this.state = state;
+  ): void {
+
+    if (
+      state
+    ) {
+      this.state =
+        state;
     }
+
 
     const ctx =
       this.internalCtx;
 
+
     const w =
-      this.internalCanvas.width;
+      this.sceneWidth;
+
 
     const h =
-      this.internalCanvas.height;
+      this.sceneHeight;
+
 
     /* ----------------------------------------------------------------------
-       WORLD
+       RESET INTERNAL FRAME
        ---------------------------------------------------------------------- */
 
     ctx.save();
+
 
     ctx.setTransform(
       1,
@@ -437,6 +531,7 @@ export class Renderer {
       0,
       0
     );
+
 
     ctx.clearRect(
       0,
@@ -445,85 +540,76 @@ export class Renderer {
       h
     );
 
-    /*
-     * Camera.
-     */
+
+    /* ----------------------------------------------------------------------
+       CAMERA
+       ---------------------------------------------------------------------- */
+
     const cameraX =
-      this.state?.cameraX ?? 0;
+      this.safeNumber(
+        this.state?.cameraX,
+        0
+      );
+
 
     const cameraY =
-      this.state?.cameraY ?? 0;
+      this.safeNumber(
+        this.state?.cameraY,
+        0
+      );
+
 
     const cameraZoom =
-      this.state?.cameraZoom ?? 1;
+      this.clamp(
+        this.safeNumber(
+          this.state?.cameraZoom,
+          1
+        ),
+        0.96,
+        1.06
+      );
 
-    const safeCameraX =
-      Number.isFinite(
-        cameraX
-      )
-        ? cameraX
-        : 0;
 
-    const safeCameraY =
-      Number.isFinite(
-        cameraY
-      )
-        ? cameraY
-        : 0;
+    const driftX =
+      cameraX *
+      0.015;
 
-    const safeCameraZoom =
-      Number.isFinite(
-        cameraZoom
-      )
-        ? Math.max(
-            0.5,
-            Math.min(
-              2,
-              cameraZoom
-            )
-          )
-        : 1;
+
+    const driftY =
+      cameraY *
+      0.01;
+
 
     ctx.translate(
-      w * 0.5,
-      h * 0.5
+      driftX,
+      driftY
     );
 
-    ctx.translate(
-      safeCameraX * 0.02,
-      safeCameraY * 0.02
-    );
 
-    ctx.scale(
-      safeCameraZoom,
-      safeCameraZoom
-    );
+    /* ----------------------------------------------------------------------
+       WORLD
+       ---------------------------------------------------------------------- */
 
-    ctx.translate(
-      -w * 0.5,
-      -h * 0.5
-    );
-
-    /*
-     * Scene.
-     */
-    this.drawBackground(
+    this.drawRoom(
       ctx,
       w,
       h
     );
 
-    this.drawCasinoAtmosphere(
+
+    this.drawCasinoLights(
       ctx,
       w,
       h
     );
 
-    this.drawTable(
+
+    this.drawPeripheralPlayers(
       ctx,
       w,
       h
     );
+
 
     this.drawDealer(
       ctx,
@@ -531,17 +617,18 @@ export class Renderer {
       h
     );
 
-    this.drawSeats(
+
+    this.drawFirstPersonTable(
       ctx,
       w,
-      h
+      h,
+      cameraZoom
     );
 
-    this.drawDeck(
-      ctx,
-      w,
-      h
-    );
+
+    /* ----------------------------------------------------------------------
+       REAL GAME OBJECTS
+       ---------------------------------------------------------------------- */
 
     this.drawDealerCards(
       ctx,
@@ -549,54 +636,71 @@ export class Renderer {
       h
     );
 
+
+    this.drawPeripheralCards(
+      ctx,
+      w,
+      h
+    );
+
+
     this.drawPlayerCards(
       ctx,
       w,
-      h
+      h,
+      cameraZoom
     );
 
-    this.drawBetAndChips(
+
+    this.drawPlayerChips(
+      ctx,
+      w,
+      h,
+      cameraZoom
+    );
+
+
+    this.drawTableMarkings(
       ctx,
       w,
       h
     );
 
-    this.drawTableDetails(
+
+    this.drawGameStatusAtmosphere(
       ctx,
       w,
       h
     );
+
+
+    this.drawForegroundPresence(
+      ctx,
+      w,
+      h
+    );
+
 
     ctx.restore();
 
+
     /* ----------------------------------------------------------------------
-       FOREGROUND
+       FINAL PIXEL TREATMENT
        ---------------------------------------------------------------------- */
 
-    ctx.save();
-
-    ctx.setTransform(
-      1,
-      0,
-      0,
-      1,
-      0,
-      0
-    );
-
-    this.drawForegroundLighting(
+    this.drawFinalPixelTreatment(
       ctx,
       w,
       h
     );
 
-    ctx.restore();
 
     /* ----------------------------------------------------------------------
-       INTERNAL -> DISPLAY
+       UPSCALE
        ---------------------------------------------------------------------- */
 
     this.ctx.save();
+
 
     this.ctx.setTransform(
       this.dpr,
@@ -607,6 +711,7 @@ export class Renderer {
       0
     );
 
+
     this.ctx.clearRect(
       0,
       0,
@@ -614,8 +719,10 @@ export class Renderer {
       this.height
     );
 
+
     this.ctx.imageSmoothingEnabled =
       false;
+
 
     this.ctx.drawImage(
       this.internalCanvas,
@@ -625,18 +732,21 @@ export class Renderer {
       this.height
     );
 
+
     this.ctx.restore();
   }
 
-  /* ========================================================================
-     BACKGROUND
-     ======================================================================== */
 
-  private drawBackground(
+  /* ==========================================================================
+     ROOM
+     ========================================================================== */
+
+  private drawRoom(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number
-  ) {
+  ): void {
+
     const gradient =
       ctx.createLinearGradient(
         0,
@@ -645,23 +755,34 @@ export class Renderer {
         h
       );
 
+
     gradient.addColorStop(
       0,
       COLORS.black
     );
+
 
     gradient.addColorStop(
       0.42,
       COLORS.blackSoft
     );
 
+
+    gradient.addColorStop(
+      0.72,
+      "#07100C"
+    );
+
+
     gradient.addColorStop(
       1,
       COLORS.background
     );
 
+
     ctx.fillStyle =
       gradient;
+
 
     ctx.fillRect(
       0,
@@ -670,248 +791,350 @@ export class Renderer {
       h
     );
 
-    /*
-     * Architectural planes.
-     */
+
+    /* Architectural seams. */
+
     ctx.fillStyle =
       "rgba(255,255,255,0.012)";
 
+
     ctx.fillRect(
       0,
-      h * 0.08,
+      Math.round(
+        h *
+        0.15
+      ),
       w,
       1
     );
+
 
     ctx.fillStyle =
       "rgba(255,255,255,0.008)";
 
+
     ctx.fillRect(
       0,
-      h * 0.27,
+      Math.round(
+        h *
+        0.32
+      ),
       w,
       1
     );
 
-    /*
-     * Background columns.
-     */
-    this.drawBackgroundColumn(
-      ctx,
-      w * 0.08,
-      h * 0.11,
-      w * 0.08,
-      h * 0.51
+
+    /* Left wall. */
+
+    ctx.fillStyle =
+      "rgba(0,0,0,0.34)";
+
+
+    ctx.fillRect(
+      0,
+      Math.round(
+        h *
+        0.19
+      ),
+      Math.round(
+        w *
+        0.11
+      ),
+      Math.round(
+        h *
+        0.46
+      )
     );
 
-    this.drawBackgroundColumn(
-      ctx,
-      w * 0.84,
-      h * 0.14,
-      w * 0.08,
-      h * 0.48
+
+    /* Right wall. */
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.89
+      ),
+      Math.round(
+        h *
+        0.18
+      ),
+      Math.round(
+        w *
+        0.11
+      ),
+      Math.round(
+        h *
+        0.48
+      )
     );
 
-    /*
-     * Far floor.
-     */
-    const floorY =
-      h * 0.57;
+
+    /* Horizon. */
+
+    const horizonY =
+      Math.round(
+        h *
+        0.48
+      );
+
+
+    ctx.fillStyle =
+      "rgba(0,0,0,0.16)";
+
+
+    ctx.fillRect(
+      0,
+      horizonY,
+      w,
+      1
+    );
+
+
+    /* Floor. */
 
     const floorGradient =
       ctx.createLinearGradient(
         0,
-        floorY,
+        horizonY,
         0,
         h
       );
 
+
     floorGradient.addColorStop(
       0,
-      "#080D0A"
+      "#07100D"
     );
+
 
     floorGradient.addColorStop(
       1,
-      COLORS.background
+      "#020302"
     );
+
 
     ctx.fillStyle =
       floorGradient;
 
+
     ctx.fillRect(
       0,
-      floorY,
+      horizonY,
       w,
-      h - floorY
+      h -
+        horizonY
     );
   }
 
-  private drawBackgroundColumn(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number
-  ) {
-    ctx.fillStyle =
-      "rgba(4,7,6,0.84)";
 
-    ctx.fillRect(
-      x,
-      y,
-      width,
-      height
-    );
+  /* ==========================================================================
+     CASINO LIGHTS
+     ========================================================================== */
 
-    ctx.fillStyle =
-      "rgba(197,163,92,0.025)";
-
-    ctx.fillRect(
-      x + width * 0.18,
-      y,
-      1,
-      height
-    );
-  }
-
-  /* ========================================================================
-     CASINO ATMOSPHERE
-     ======================================================================== */
-
-  private drawCasinoAtmosphere(
+  private drawCasinoLights(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number
-  ) {
-    const pulse =
+  ): void {
+
+    const lightPulse =
       0.5 +
       Math.sin(
-        this.time * 0.42
+        this.time *
+        0.45
       ) *
-        0.5;
+      0.5;
 
-    /*
-     * Distant tables.
-     */
-    this.drawDistantTable(
-      ctx,
-      w * 0.04,
-      h * 0.31,
-      w * 0.31,
-      h * 0.09
-    );
 
-    this.drawDistantTable(
-      ctx,
-      w * 0.96,
-      h * 0.29,
-      w * 0.31,
-      h * 0.09
-    );
+    const lamps = [
+      {
+        x:
+          w *
+          0.12,
 
-    /*
-     * Overhead lights.
-     */
-    const lightPositions = [
-      w * 0.12,
-      w * 0.27,
-      w * 0.50,
-      w * 0.73,
-      w * 0.88,
+        y:
+          h *
+          0.085,
+
+        size:
+          2,
+      },
+
+      {
+        x:
+          w *
+          0.27,
+
+        y:
+          h *
+          0.065,
+
+        size:
+          3,
+      },
+
+      {
+        x:
+          w *
+          0.50,
+
+        y:
+          h *
+          0.05,
+
+        size:
+          3,
+      },
+
+      {
+        x:
+          w *
+          0.73,
+
+        y:
+          h *
+          0.065,
+
+        size:
+          3,
+      },
+
+      {
+        x:
+          w *
+          0.88,
+
+        y:
+          h *
+          0.085,
+
+        size:
+          2,
+      },
     ];
+
 
     for (
       let i = 0;
-      i < lightPositions.length;
-      i++
+      i <
+      lamps.length;
+      i += 1
     ) {
-      const x =
-        lightPositions[i];
+
+      const lamp =
+        lamps[i];
+
 
       const intensity =
-        0.14 +
+        0.16 +
         Math.sin(
           this.time *
-            (0.18 + i * 0.03) +
-            i
+          (
+            0.16 +
+            i *
+            0.025
+          ) +
+          i
         ) *
-          0.025;
+        0.025;
+
 
       ctx.fillStyle =
-        `rgba(215,186,119,${intensity})`;
+        `rgba(225,198,125,${intensity})`;
+
 
       ctx.fillRect(
-        Math.round(x),
         Math.round(
-          h * 0.075
+          lamp.x
         ),
-        3,
-        2
+        Math.round(
+          lamp.y
+        ),
+        lamp.size,
+        lamp.size
       );
 
+
       ctx.fillStyle =
-        `rgba(215,186,119,${intensity * 0.15})`;
+        `rgba(225,198,125,${intensity * 0.12})`;
+
 
       ctx.fillRect(
         Math.round(
-          x - 3
+          lamp.x -
+          3
         ),
         Math.round(
-          h * 0.075 - 2
+          lamp.y -
+          2
         ),
-        9,
-        6
+        lamp.size +
+        6,
+        lamp.size +
+        4
       );
     }
 
-    /*
-     * Distant guests.
-     */
-    this.drawDistantPerson(
+
+    this.drawDistantTableHint(
       ctx,
-      w * 0.13,
-      h * 0.40,
-      0.8
+      w *
+      0.055,
+      h *
+      0.39,
+      w *
+      0.22
     );
 
-    this.drawDistantPerson(
+
+    this.drawDistantTableHint(
       ctx,
-      w * 0.88,
-      h * 0.41,
-      0.75
+      w *
+      0.945,
+      h *
+      0.39,
+      w *
+      0.22
     );
 
-    /*
-     * Central atmospheric bloom.
-     */
+
     const bloom =
       ctx.createRadialGradient(
-        w * 0.5,
-        h * 0.36,
+        w *
+        0.5,
+        h *
+        0.40,
         0,
-        w * 0.5,
-        h * 0.36,
-        h * 0.48
+        w *
+        0.5,
+        h *
+        0.40,
+        h *
+        0.50
       );
+
 
     bloom.addColorStop(
       0,
-      `rgba(25,73,55,${0.07 + pulse * 0.018})`
+      `rgba(28,80,60,${0.065 + lightPulse * 0.012})`
     );
 
+
     bloom.addColorStop(
-      0.65,
-      "rgba(11,37,29,0.018)"
+      0.55,
+      "rgba(11,40,31,0.018)"
     );
+
 
     bloom.addColorStop(
       1,
       "rgba(0,0,0,0)"
     );
 
+
     ctx.fillStyle =
       bloom;
+
 
     ctx.fillRect(
       0,
@@ -921,632 +1144,706 @@ export class Renderer {
     );
   }
 
-  private drawDistantTable(
+
+  private drawDistantTableHint(
     ctx: CanvasRenderingContext2D,
     x: number,
     y: number,
-    width: number,
-    height: number
-  ) {
+    width: number
+  ): void {
+
     ctx.save();
+
 
     ctx.globalAlpha =
       0.18;
 
-    ctx.fillStyle =
-      COLORS.feltDeep;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      x,
-      y,
-      width * 0.5,
-      height * 0.5,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
 
     ctx.strokeStyle =
-      "rgba(197,163,92,0.18)";
+      "rgba(197,163,92,0.20)";
+
 
     ctx.lineWidth =
       1;
 
-    ctx.stroke();
-
-    ctx.restore();
-  }
-
-  private drawDistantPerson(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    scale: number
-  ) {
-    ctx.save();
-
-    ctx.globalAlpha =
-      0.20;
-
-    ctx.fillStyle =
-      COLORS.blackSoft;
 
     ctx.beginPath();
 
-    ctx.arc(
-      x,
-      y,
-      7 * scale,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    ctx.beginPath();
 
     ctx.ellipse(
       x,
-      y + 14 * scale,
-      13 * scale,
-      17 * scale,
+      y,
+      width *
+      0.5,
+      10,
       0,
       0,
       TAU
     );
 
-    ctx.fill();
+
+    ctx.stroke();
+
 
     ctx.restore();
   }
 
-  /* ========================================================================
-     TABLE
-     ======================================================================== */
 
-  private drawTable(
+  /* ==========================================================================
+     PERIPHERAL PLAYERS
+     ========================================================================== */
+
+  private drawPeripheralPlayers(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number
-  ) {
-    const cx =
-      w * 0.5;
+  ): void {
 
-    const cy =
-      h * 0.61;
+    const players =
+      this.state?.casino
+        ?.players ??
+      [];
 
-    const outerW =
-      w * 0.93;
 
-    const outerH =
-      h * 0.68;
-
-    /*
-     * Deep shadow.
-     */
-    ctx.fillStyle =
-      "rgba(0,0,0,0.68)";
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx + 7,
-      cy + 14,
-      outerW * 0.46,
-      outerH * 0.45,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Black separation.
-     */
-    ctx.fillStyle =
-      COLORS.blackSoft;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy + 5,
-      outerW * 0.49,
-      outerH * 0.48,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Deep wood.
-     */
-    ctx.fillStyle =
-      COLORS.woodDeep;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy,
-      outerW * 0.485,
-      outerH * 0.47,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Main wood.
-     */
-    ctx.fillStyle =
-      COLORS.wood;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy - 2,
-      outerW * 0.465,
-      outerH * 0.448,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Wood highlight.
-     */
-    ctx.strokeStyle =
-      "rgba(79,51,31,0.55)";
-
-    ctx.lineWidth =
-      3;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy - 2,
-      outerW * 0.452,
-      outerH * 0.435,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.stroke();
-
-    /*
-     * Gold trim.
-     */
-    ctx.strokeStyle =
-      COLORS.goldDark;
-
-    ctx.lineWidth =
-      7;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy - 4,
-      outerW * 0.425,
-      outerH * 0.40,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.stroke();
-
-    ctx.strokeStyle =
-      COLORS.goldLight;
-
-    ctx.lineWidth =
-      1;
-
-    ctx.globalAlpha =
-      0.70;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy - 4,
-      outerW * 0.419,
-      outerH * 0.394,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.stroke();
-
-    ctx.globalAlpha =
-      1;
-
-    /*
-     * Felt.
-     */
-    ctx.fillStyle =
-      COLORS.felt;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy - 7,
-      outerW * 0.398,
-      outerH * 0.363,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Felt lighting.
-     */
-    const feltLight =
-      ctx.createRadialGradient(
-        cx,
-        cy - h * 0.08,
-        0,
-        cx,
-        cy,
-        outerW * 0.41
+    const leftPlayer =
+      players.find(
+        (
+          player
+        ) =>
+          player.seat ===
+          1
       );
 
-    feltLight.addColorStop(
-      0,
-      "rgba(38,100,76,0.20)"
-    );
 
-    feltLight.addColorStop(
-      0.42,
-      "rgba(18,65,50,0.07)"
-    );
-
-    feltLight.addColorStop(
-      1,
-      "rgba(0,0,0,0.34)"
-    );
-
-    ctx.fillStyle =
-      feltLight;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx,
-      cy - 7,
-      outerW * 0.398,
-      outerH * 0.363,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Felt grain.
-     */
-    this.drawFeltTexture(
-      ctx,
-      cx,
-      cy,
-      outerW * 0.39,
-      outerH * 0.355
-    );
-
-    /*
-     * Dealer rail.
-     */
-    this.drawTableRail(
-      ctx,
-      cx,
-      cy - outerH * 0.19,
-      outerW * 0.30,
-      outerH * 0.08
-    );
-  }
-
-  private drawFeltTexture(
-    ctx: CanvasRenderingContext2D,
-    cx: number,
-    cy: number,
-    rx: number,
-    ry: number
-  ) {
-    const count =
-      230;
-
-    let seed =
-      this.seed;
-
-    for (
-      let i = 0;
-      i < count;
-      i++
-    ) {
-      seed =
+    const rightPlayer =
+      players.find(
         (
-          seed * 1664525 +
-          1013904223
-        ) >>> 0;
-
-      const unitX =
-        (
-          seed & 0xffff
-        ) /
-        0xffff;
-
-      seed =
-        (
-          seed * 1664525 +
-          1013904223
-        ) >>> 0;
-
-      const unitY =
-        (
-          seed & 0xffff
-        ) /
-        0xffff;
-
-      const dx =
-        unitX * 2 - 1;
-
-      const dy =
-        unitY * 2 - 1;
-
-      if (
-        dx * dx +
-          dy * dy >
-        1
-      ) {
-        continue;
-      }
-
-      const x =
-        cx +
-        dx * rx;
-
-      const y =
-        cy +
-        dy * ry;
-
-      const bright =
-        i % 3 === 0;
-
-      ctx.fillStyle =
-        bright
-          ? "rgba(72,126,99,0.055)"
-          : "rgba(0,0,0,0.055)";
-
-      ctx.fillRect(
-        Math.round(x),
-        Math.round(y),
-        1,
-        1
+          player
+        ) =>
+          player.seat ===
+          5
       );
-    }
-  }
 
-  private drawTableRail(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number
-  ) {
-    ctx.fillStyle =
-      "rgba(5,22,17,0.55)";
 
-    ctx.fillRect(
-      x - width * 0.5,
-      y - height * 0.5,
-      width,
-      height
+    this.drawPeripheralPlayerSide(
+      ctx,
+      w,
+      h,
+      "left",
+      leftPlayer
     );
 
-    ctx.strokeStyle =
-      "rgba(197,163,92,0.23)";
 
-    ctx.lineWidth =
-      1;
-
-    ctx.strokeRect(
-      x - width * 0.5,
-      y - height * 0.5,
-      width,
-      height
-    );
-
-    ctx.fillStyle =
-      "rgba(197,163,92,0.55)";
-
-    ctx.font =
-      FONT.tiny;
-
-    ctx.textAlign =
-      "center";
-
-    ctx.textBaseline =
-      "middle";
-
-    ctx.fillText(
-      "BLACKJACK",
-      x,
-      y - 2
+    this.drawPeripheralPlayerSide(
+      ctx,
+      w,
+      h,
+      "right",
+      rightPlayer
     );
   }
 
-  /* ========================================================================
-     DEALER
-     ======================================================================== */
 
-  private drawDealer(
+  private drawPeripheralPlayerSide(
     ctx: CanvasRenderingContext2D,
-    _w: number,
-    h: number
-  ) {
-    const cx =
-      this.internalCanvas.width *
-      0.5;
+    w: number,
+    h: number,
+    side: "left" | "right",
+    player?: Player
+  ): void {
 
-    const baseY =
-      h * 0.30;
+    const left =
+      side ===
+      "left";
 
-    const breathing =
-      this.state?.phase ===
-      "loading"
-        ? 0
-        : Math.sin(
-            this.time * 0.95
-          ) * 1.1;
+
+    const active =
+      player?.active ??
+      true;
+
+
+    const jacket =
+      player?.visual
+        ?.jacket ??
+      COLORS.jacket;
+
+
+    const jacketLight =
+      COLORS.jacketLight;
+
 
     ctx.save();
 
+
+    ctx.globalAlpha =
+      active
+        ? 0.72
+        : 0.32;
+
+
     /*
-     * Back shadow.
+     * Shoulder silhouette.
      */
     ctx.fillStyle =
-      "rgba(0,0,0,0.50)";
+      jacket;
+
 
     ctx.beginPath();
 
+
+    if (
+      left
+    ) {
+
+      ctx.moveTo(
+        0,
+        h *
+        0.48
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.075,
+        h *
+        0.43
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.145,
+        h *
+        0.46
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.17,
+        h *
+        0.62
+      );
+
+
+      ctx.lineTo(
+        0,
+        h *
+        0.70
+      );
+
+    } else {
+
+      ctx.moveTo(
+        w,
+        h *
+        0.47
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.925,
+        h *
+        0.43
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.855,
+        h *
+        0.46
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.83,
+        h *
+        0.62
+      );
+
+
+      ctx.lineTo(
+        w,
+        h *
+        0.70
+      );
+    }
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /*
+     * Forearm.
+     */
+    ctx.fillStyle =
+      jacketLight;
+
+
+    ctx.beginPath();
+
+
+    if (
+      left
+    ) {
+
+      ctx.moveTo(
+        w *
+        0.10,
+        h *
+        0.59
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.25,
+        h *
+        0.62
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.31,
+        h *
+        0.71
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.26,
+        h *
+        0.75
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.09,
+        h *
+        0.67
+      );
+
+    } else {
+
+      ctx.moveTo(
+        w *
+        0.90,
+        h *
+        0.59
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.75,
+        h *
+        0.62
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.69,
+        h *
+        0.71
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.74,
+        h *
+        0.75
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.91,
+        h *
+        0.67
+      );
+    }
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /*
+     * Hand.
+     */
+    ctx.fillStyle =
+      player?.visual
+        ?.skin ??
+      COLORS.skinDark;
+
+
+    if (
+      left
+    ) {
+
+      ctx.fillRect(
+        Math.round(
+          w *
+          0.245
+        ),
+        Math.round(
+          h *
+          0.69
+        ),
+        12,
+        5
+      );
+
+    } else {
+
+      ctx.fillRect(
+        Math.round(
+          w *
+          0.735
+        ),
+        Math.round(
+          h *
+          0.69
+        ),
+        12,
+        5
+      );
+    }
+
+
+    ctx.restore();
+  }
+
+
+  /* ==========================================================================
+     DEALER
+     ========================================================================== */
+
+  private drawDealer(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number
+  ): void {
+
+    const dealer =
+      this.state?.casino
+        ?.dealer;
+
+
+    const cx =
+      w *
+      0.50;
+
+
+    const topY =
+      h *
+      0.235;
+
+
+    const breathing =
+      this.state?.phase ===
+        "loading"
+        ? 0
+        : Math.sin(
+            this.time *
+            0.80
+          ) *
+          0.7;
+
+
+    const jacket =
+      dealer?.visual
+        ?.jacket ??
+      COLORS.jacket;
+
+
+    const jacketLight =
+      COLORS.jacketLight;
+
+
+    const shirt =
+      dealer?.visual
+        ?.shirt ??
+      COLORS.cardLight;
+
+
+    ctx.save();
+
+
+    /*
+     * Dealer shadow.
+     */
+    ctx.fillStyle =
+      "rgba(0,0,0,0.54)";
+
+
+    ctx.beginPath();
+
+
     ctx.ellipse(
       cx,
-      baseY + 50,
-      67,
-      18,
+      h *
+      0.47,
+      w *
+      0.16,
+      h *
+      0.06,
       0,
       0,
       TAU
     );
 
+
     ctx.fill();
 
+
     /*
-     * Jacket / torso.
+     * Torso.
      */
     ctx.fillStyle =
-      COLORS.jacket;
+      jacket;
+
 
     ctx.beginPath();
 
+
     ctx.moveTo(
-      cx - 48,
-      baseY + 69 + breathing
+      cx -
+      w *
+      0.15,
+      h *
+      0.56
     );
 
-    ctx.lineTo(
-      cx - 35,
-      baseY + 28 + breathing
-    );
 
     ctx.lineTo(
-      cx - 18,
-      baseY + 14 + breathing
+      cx -
+      w *
+      0.115,
+      h *
+      0.33 +
+      breathing
     );
 
-    ctx.lineTo(
-      cx + 18,
-      baseY + 14 + breathing
-    );
 
     ctx.lineTo(
-      cx + 35,
-      baseY + 28 + breathing
+      cx -
+      w *
+      0.065,
+      topY +
+      breathing
     );
 
+
     ctx.lineTo(
-      cx + 48,
-      baseY + 69 + breathing
+      cx +
+      w *
+      0.065,
+      topY +
+      breathing
     );
+
+
+    ctx.lineTo(
+      cx +
+      w *
+      0.115,
+      h *
+      0.33 +
+      breathing
+    );
+
+
+    ctx.lineTo(
+      cx +
+      w *
+      0.15,
+      h *
+      0.56
+    );
+
 
     ctx.closePath();
 
+
     ctx.fill();
 
-    /*
-     * Jacket highlight.
-     */
-    ctx.strokeStyle =
-      "rgba(231,225,211,0.08)";
 
-    ctx.lineWidth =
-      2;
+    /*
+     * Jacket side shadow.
+     */
+    ctx.fillStyle =
+      "rgba(0,0,0,0.22)";
+
 
     ctx.beginPath();
 
+
     ctx.moveTo(
-      cx - 30,
-      baseY + 28 + breathing
+      cx -
+      w *
+      0.15,
+      h *
+      0.56
     );
+
 
     ctx.lineTo(
-      cx - 4,
-      baseY + 66 + breathing
+      cx -
+      w *
+      0.115,
+      h *
+      0.33 +
+      breathing
     );
+
 
     ctx.lineTo(
-      cx + 30,
-      baseY + 28 + breathing
+      cx -
+      w *
+      0.055,
+      h *
+      0.39 +
+      breathing
     );
 
-    ctx.stroke();
+
+    ctx.lineTo(
+      cx -
+      w *
+      0.045,
+      h *
+      0.56
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      cx +
+      w *
+      0.15,
+      h *
+      0.56
+    );
+
+
+    ctx.lineTo(
+      cx +
+      w *
+      0.115,
+      h *
+      0.33 +
+      breathing
+    );
+
+
+    ctx.lineTo(
+      cx +
+      w *
+      0.055,
+      h *
+      0.39 +
+      breathing
+    );
+
+
+    ctx.lineTo(
+      cx +
+      w *
+      0.045,
+      h *
+      0.56
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
 
     /*
      * Shirt.
      */
     ctx.fillStyle =
-      COLORS.cardLight;
+      shirt;
+
 
     ctx.beginPath();
 
+
     ctx.moveTo(
-      cx - 15,
-      baseY + 23 + breathing
+      cx -
+      w *
+      0.042,
+      h *
+      0.32 +
+      breathing
     );
+
 
     ctx.lineTo(
       cx,
-      baseY + 14 + breathing
+      h *
+      0.275 +
+      breathing
     );
 
-    ctx.lineTo(
-      cx + 15,
-      baseY + 23 + breathing
-    );
 
     ctx.lineTo(
-      cx + 9,
-      baseY + 48 + breathing
+      cx +
+      w *
+      0.042,
+      h *
+      0.32 +
+      breathing
     );
 
+
     ctx.lineTo(
-      cx - 9,
-      baseY + 48 + breathing
+      cx +
+      w *
+      0.028,
+      h *
+      0.47
     );
+
+
+    ctx.lineTo(
+      cx -
+      w *
+      0.028,
+      h *
+      0.47
+    );
+
 
     ctx.closePath();
 
+
     ctx.fill();
+
 
     /*
      * Tie.
@@ -1554,167 +1851,167 @@ export class Renderer {
     ctx.fillStyle =
       COLORS.red;
 
+
     ctx.beginPath();
 
+
     ctx.moveTo(
-      cx - 3,
-      baseY + 24 + breathing
+      cx - 4,
+      h *
+      0.32 +
+      breathing
     );
 
-    ctx.lineTo(
-      cx + 3,
-      baseY + 24 + breathing
-    );
 
     ctx.lineTo(
       cx + 4,
-      baseY + 47 + breathing
+      h *
+      0.32 +
+      breathing
     );
+
+
+    ctx.lineTo(
+      cx + 5,
+      h *
+      0.45 +
+      breathing
+    );
+
 
     ctx.lineTo(
       cx,
-      baseY + 52 + breathing
+      h *
+      0.48 +
+      breathing
     );
 
+
     ctx.lineTo(
-      cx - 4,
-      baseY + 47 + breathing
+      cx - 5,
+      h *
+      0.45 +
+      breathing
     );
+
 
     ctx.closePath();
 
+
     ctx.fill();
 
-    /*
-     * Neck.
-     */
-    ctx.fillStyle =
-      COLORS.skinDark;
-
-    ctx.fillRect(
-      cx - 7,
-      baseY + 6 + breathing,
-      14,
-      12
-    );
 
     /*
-     * Head.
+     * Jacket seam.
      */
-    ctx.fillStyle =
-      COLORS.skin;
+    ctx.strokeStyle =
+      "rgba(231,209,142,0.16)";
+
+
+    ctx.lineWidth =
+      1;
+
 
     ctx.beginPath();
 
-    ctx.ellipse(
+
+    ctx.moveTo(
       cx,
-      baseY - 5 + breathing,
-      23,
-      27,
-      0,
-      0,
-      TAU
+      h *
+      0.31 +
+      breathing
     );
 
-    ctx.fill();
 
-    /*
-     * Hair.
-     */
-    ctx.fillStyle =
-      COLORS.hairBlack;
-
-    ctx.beginPath();
-
-    ctx.arc(
+    ctx.lineTo(
       cx,
-      baseY - 16 + breathing,
-      23,
-      Math.PI,
-      TAU
+      h *
+      0.56
     );
 
-    ctx.fill();
+
+    ctx.stroke();
+
 
     /*
-     * Face shadow.
-     */
-    ctx.fillStyle =
-      "rgba(33,24,20,0.20)";
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      cx + 4,
-      baseY + 1 + breathing,
-      18,
-      18,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Eyes.
-     */
-    ctx.fillStyle =
-      "rgba(48,40,32,0.85)";
-
-    ctx.fillRect(
-      cx - 9,
-      baseY - 4 + breathing,
-      3,
-      2
-    );
-
-    ctx.fillRect(
-      cx + 6,
-      baseY - 4 + breathing,
-      3,
-      2
-    );
-
-    /*
-     * Face highlight.
-     */
-    ctx.fillStyle =
-      "rgba(255,236,210,0.14)";
-
-    ctx.fillRect(
-      cx - 11,
-      baseY + 10 + breathing,
-      20,
-      1
-    );
-
-    /*
-     * Left arm.
+     * Arms.
      */
     this.drawDealerArm(
       ctx,
-      cx - 34,
-      baseY + 33 + breathing,
-      cx - 75,
-      baseY + 78 + breathing,
-      -0.32
+      cx -
+      w *
+      0.085,
+      h *
+      0.38 +
+      breathing,
+      cx -
+      w *
+      0.235,
+      h *
+      0.62 +
+      breathing,
+      -1,
+      jacket,
+      jacketLight,
+      dealer?.visual
+        ?.skin ??
+      COLORS.skin
     );
 
-    /*
-     * Right arm.
-     */
+
     this.drawDealerArm(
       ctx,
-      cx + 34,
-      baseY + 33 + breathing,
-      cx + 75,
-      baseY + 78 + breathing,
-      0.32
+      cx +
+      w *
+      0.085,
+      h *
+      0.38 +
+      breathing,
+      cx +
+      w *
+      0.235,
+      h *
+      0.62 +
+      breathing,
+      1,
+      jacket,
+      jacketLight,
+      dealer?.visual
+        ?.skin ??
+      COLORS.skin
     );
+
+
+    /*
+     * Extremely subtle dealer state marker.
+     */
+    if (
+      dealer?.state ===
+      "reaching"
+    ) {
+
+      ctx.fillStyle =
+        "rgba(231,209,142,0.10)";
+
+
+      ctx.fillRect(
+        Math.round(
+          cx -
+          18
+        ),
+        Math.round(
+          h *
+          0.45
+        ),
+        36,
+        1
+      );
+    }
+
 
     ctx.restore();
   }
+
 
   private drawDealerArm(
     ctx: CanvasRenderingContext2D,
@@ -1722,638 +2019,1417 @@ export class Renderer {
     shoulderY: number,
     handX: number,
     handY: number,
-    bend: number
-  ) {
+    side: -1 | 1,
+    jacket: string,
+    jacketLight: string,
+    skin: string
+  ): void {
+
     const midX =
       (
         shoulderX +
         handX
-      ) /
-        2 +
-      bend * 18;
+      ) *
+      0.5 +
+      side *
+      8;
+
 
     const midY =
       (
         shoulderY +
         handY
-      ) /
-        2 -
+      ) *
+      0.5 -
       2;
 
-    /*
-     * Upper arm.
-     */
+
     ctx.strokeStyle =
-      COLORS.jacket;
+      jacket;
+
 
     ctx.lineWidth =
-      14;
+      17;
+
 
     ctx.lineCap =
       "round";
 
+
     ctx.beginPath();
+
 
     ctx.moveTo(
       shoulderX,
       shoulderY
     );
 
+
     ctx.lineTo(
       midX,
       midY
     );
 
+
     ctx.stroke();
 
-    /*
-     * Forearm.
-     */
-    ctx.lineWidth =
-      11;
 
     ctx.strokeStyle =
-      COLORS.jacketLight;
+      jacketLight;
+
+
+    ctx.lineWidth =
+      12;
+
 
     ctx.beginPath();
+
 
     ctx.moveTo(
       midX,
       midY
     );
 
+
     ctx.lineTo(
       handX,
       handY
     );
 
+
     ctx.stroke();
+
+
+    /*
+     * Cuff.
+     */
+    ctx.strokeStyle =
+      COLORS.cardLight;
+
+
+    ctx.lineWidth =
+      5;
+
+
+    ctx.beginPath();
+
+
+    const cuffX =
+      handX -
+      side *
+      5;
+
+
+    const cuffY =
+      handY -
+      5;
+
+
+    ctx.moveTo(
+      cuffX,
+      cuffY
+    );
+
+
+    ctx.lineTo(
+      handX,
+      handY
+    );
+
+
+    ctx.stroke();
+
 
     /*
      * Hand.
      */
     ctx.fillStyle =
-      COLORS.skin;
+      skin;
+
 
     ctx.beginPath();
 
-    ctx.arc(
+
+    ctx.ellipse(
       handX,
       handY,
-      8,
+      9,
+      6,
+      side *
+      0.18,
       0,
       TAU
     );
 
+
     ctx.fill();
 
+
     /*
-     * Finger plane.
+     * Finger block.
      */
     ctx.fillStyle =
-      "rgba(46,35,28,0.20)";
+      COLORS.skinDark;
+
 
     ctx.fillRect(
-      handX - 4,
-      handY + 1,
-      8,
-      2
+      Math.round(
+        handX -
+        side *
+        5
+      ),
+      Math.round(
+        handY -
+        2
+      ),
+      5,
+      3
     );
   }
 
-  /* ========================================================================
-     SEATS / PLAYERS
-     ======================================================================== */
 
-  private drawSeats(
+  /* ==========================================================================
+     TABLE
+     ========================================================================== */
+
+  private drawFirstPersonTable(
     ctx: CanvasRenderingContext2D,
     w: number,
-    h: number
-  ) {
-    const tableY =
-      h * 0.63;
+    h: number,
+    zoom: number
+  ): void {
 
-    const seats: SeatVisual[] = [
-      {
-        x: w * 0.16,
-        y: tableY - 18,
-        occupied: true,
-        active: false,
-        name: "MICHAEL",
-      },
-      {
-        x: w * 0.31,
-        y: tableY + 13,
-        occupied: true,
-        active: false,
-        name: "OLIVIA",
-      },
-      {
-        x: w * 0.50,
-        y: tableY + 31,
-        occupied: true,
-        active: true,
-        name: "PLAYER",
-      },
-      {
-        x: w * 0.69,
-        y: tableY + 13,
-        occupied: true,
-        active: false,
-        name: "DANIEL",
-      },
-      {
-        x: w * 0.84,
-        y: tableY - 18,
-        occupied: true,
-        active: false,
-        name: "JULIA",
-      },
-    ];
+    const horizonY =
+      h *
+      0.51;
 
-    for (
-      const seat of seats
-    ) {
-      if (!seat.occupied) {
-        continue;
-      }
 
-      this.drawSeat(
-        ctx,
-        seat
-      );
-    }
-  }
-
-  private drawSeat(
-    ctx: CanvasRenderingContext2D,
-    seat: SeatVisual
-  ) {
     /*
-     * Shadow.
+     * Table body.
      */
     ctx.fillStyle =
-      "rgba(0,0,0,0.35)";
+      COLORS.woodDeep;
+
 
     ctx.beginPath();
 
-    ctx.ellipse(
-      seat.x,
-      seat.y + 28,
-      37,
-      12,
-      0,
-      0,
-      TAU
+
+    ctx.moveTo(
+      w *
+      0.16,
+      horizonY +
+      14
     );
 
-    ctx.fill();
 
-    /*
-     * Shoulders.
-     */
-    ctx.fillStyle =
-      seat.active
-        ? COLORS.jacketLight
-        : COLORS.jacket;
-
-    ctx.beginPath();
-
-    ctx.ellipse(
-      seat.x,
-      seat.y + 15,
-      34,
-      27,
-      0,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Head.
-     */
-    ctx.fillStyle =
-      COLORS.skin;
-
-    ctx.beginPath();
-
-    ctx.arc(
-      seat.x,
-      seat.y - 4,
-      14,
-      0,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Hair.
-     */
-    ctx.fillStyle =
-      COLORS.hairBlack;
-
-    ctx.beginPath();
-
-    ctx.arc(
-      seat.x,
-      seat.y - 10,
-      14,
-      Math.PI,
-      TAU
-    );
-
-    ctx.fill();
-
-    /*
-     * Face light.
-     */
-    ctx.fillStyle =
-      "rgba(235,215,190,0.08)";
-
-    ctx.fillRect(
-      seat.x - 5,
-      seat.y - 1,
-      10,
-      2
-    );
-
-    /*
-     * Name plate.
-     */
-    if (
-      seat.active
-    ) {
-      ctx.strokeStyle =
-        "rgba(225,199,119,0.35)";
-
-      ctx.lineWidth =
-        1;
-
-      ctx.strokeRect(
-        seat.x - 34,
-        seat.y + 38,
-        68,
-        12
-      );
-
-      ctx.fillStyle =
-        "rgba(225,199,119,0.82)";
-    } else {
-      ctx.fillStyle =
-        "rgba(231,225,211,0.30)";
-    }
-
-    ctx.font =
-      FONT.tiny;
-
-    ctx.textAlign =
-      "center";
-
-    ctx.textBaseline =
-      "middle";
-
-    ctx.fillText(
-      seat.name,
-      seat.x,
-      seat.y + 44
-    );
-  }
-
-  /* ========================================================================
-     DECK
-     ======================================================================== */
-
-  private drawDeck(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number
-  ) {
-    const x =
-      w * 0.57;
-
-    const y =
-      h * 0.39;
-
-    /*
-     * Shadow.
-     */
-    ctx.fillStyle =
-      "rgba(0,0,0,0.55)";
-
-    ctx.fillRect(
-      x + 4,
-      y + 5,
-      25,
-      36
-    );
-
-    /*
-     * Stacked cards.
-     */
-    for (
-      let i = 0;
-      i < 4;
-      i++
-    ) {
-      ctx.fillStyle =
-        i % 2 === 0
-          ? COLORS.cardLight
-          : COLORS.card;
-
-      ctx.fillRect(
-        x - i,
-        y - i,
-        24,
-        35
-      );
-
-      ctx.strokeStyle =
-        "rgba(20,20,18,0.38)";
-
-      ctx.lineWidth =
-        1;
-
-      ctx.strokeRect(
-        x - i,
-        y - i,
-        24,
-        35
-      );
-    }
-
-    /*
-     * Top card back.
-     */
-    this.drawCardBack(
-      ctx,
-      x - 3,
-      y - 3,
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      horizonY -
       24,
-      35,
-      0
-    );
-  }
-
-  /* ========================================================================
-     CARD BACK
-     ======================================================================== */
-
-  private drawCardBack(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    rotation = 0
-  ) {
-    ctx.save();
-
-    ctx.translate(
-      x + width / 2,
-      y + height / 2
+      w *
+      0.84,
+      horizonY +
+      14
     );
 
-    ctx.rotate(
-      rotation
+
+    ctx.lineTo(
+      w *
+      0.98,
+      h
     );
 
-    ctx.translate(
-      -width / 2,
-      -height / 2
+
+    ctx.lineTo(
+      w *
+      0.02,
+      h
     );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
 
     /*
-     * Shadow.
-     */
-    ctx.fillStyle =
-      "rgba(0,0,0,0.52)";
-
-    ctx.fillRect(
-      3,
-      3,
-      width,
-      height
-    );
-
-    /*
-     * Card stock.
-     */
-    ctx.fillStyle =
-      COLORS.cardLight;
-
-    ctx.fillRect(
-      0,
-      0,
-      width,
-      height
-    );
-
-    /*
-     * Back field.
-     */
-    ctx.fillStyle =
-      COLORS.feltMid;
-
-    ctx.fillRect(
-      2,
-      2,
-      width - 4,
-      height - 4
-    );
-
-    /*
-     * Gold border.
+     * Gold rail.
      */
     ctx.strokeStyle =
-      "rgba(206,177,101,0.72)";
+      COLORS.goldDark;
+
+
+    ctx.lineWidth =
+      8;
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.14,
+      horizonY +
+      16
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      horizonY -
+      28,
+      w *
+      0.86,
+      horizonY +
+      16
+    );
+
+
+    ctx.stroke();
+
+
+    /*
+     * Gold highlight.
+     */
+    ctx.strokeStyle =
+      COLORS.goldLight;
+
 
     ctx.lineWidth =
       1;
 
-    ctx.strokeRect(
-      4,
-      4,
-      width - 8,
-      height - 8
+
+    ctx.globalAlpha =
+      0.65;
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.15,
+      horizonY +
+      14
     );
 
+
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      horizonY -
+      24,
+      w *
+      0.85,
+      horizonY +
+      14
+    );
+
+
+    ctx.stroke();
+
+
+    ctx.globalAlpha =
+      1;
+
+
     /*
-     * Center geometry.
+     * Felt.
+     */
+    const feltTop =
+      horizonY +
+      19;
+
+
+    ctx.fillStyle =
+      COLORS.felt;
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.18,
+      feltTop
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      horizonY -
+      17,
+      w *
+      0.82,
+      feltTop
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.95,
+      h
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.05,
+      h
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /*
+     * Felt glow.
+     */
+    const feltGlow =
+      ctx.createRadialGradient(
+        w *
+        0.50,
+        h *
+        0.55,
+        0,
+        w *
+        0.50,
+        h *
+        0.68,
+        h *
+        0.64
+      );
+
+
+    feltGlow.addColorStop(
+      0,
+      "rgba(34,95,71,0.17)"
+    );
+
+
+    feltGlow.addColorStop(
+      0.52,
+      "rgba(15,57,44,0.06)"
+    );
+
+
+    feltGlow.addColorStop(
+      1,
+      "rgba(0,0,0,0.32)"
+    );
+
+
+    ctx.fillStyle =
+      feltGlow;
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.18,
+      feltTop
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      horizonY -
+      17,
+      w *
+      0.82,
+      feltTop
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.95,
+      h
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.05,
+      h
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    this.drawPerspectiveFeltTexture(
+      ctx,
+      w,
+      h,
+      feltTop
+    );
+
+
+    /*
+     * Front wood rail.
      */
     ctx.fillStyle =
-      "rgba(220,193,119,0.68)";
+      COLORS.woodDeep;
 
-    for (
-      let row = 0;
-      row < 5;
-      row++
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.02,
+      h *
+      0.92
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      h *
+      0.81,
+      w *
+      0.98,
+      h *
+      0.92
+    );
+
+
+    ctx.lineTo(
+      w,
+      h
+    );
+
+
+    ctx.lineTo(
+      0,
+      h
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /*
+     * Front rail highlight.
+     */
+    ctx.strokeStyle =
+      "rgba(197,163,92,0.34)";
+
+
+    ctx.lineWidth =
+      2;
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.02,
+      h *
+      0.92
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      h *
+      0.81,
+      w *
+      0.98,
+      h *
+      0.92
+    );
+
+
+    ctx.stroke();
+
+
+    /*
+     * Camera zoom shading.
+     */
+    if (
+      zoom >
+      1.001
     ) {
-      for (
-        let col = 0;
-        col < 3;
-        col++
-      ) {
-        const px =
-          6 +
-          col * 5;
 
-        const py =
-          5 +
-          row * 6;
-
-        if (
+      ctx.globalAlpha =
+        Math.min(
+          0.10,
           (
-            row +
-            col
-          ) %
-            2 ===
-          0
-        ) {
-          ctx.fillRect(
-            px,
-            py,
-            2,
-            2
-          );
-        }
-      }
-    }
+            zoom -
+            1
+          ) *
+          1.5
+        );
 
-    ctx.restore();
+
+      ctx.fillStyle =
+        COLORS.black;
+
+
+      ctx.fillRect(
+        0,
+        h *
+        0.58,
+        w,
+        h *
+        0.42
+      );
+
+
+      ctx.globalAlpha =
+        1;
+    }
   }
 
-  /* ========================================================================
+
+  private drawPerspectiveFeltTexture(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    top: number
+  ): void {
+
+    const count =
+      420;
+
+
+    let seed =
+      this.seed;
+
+
+    for (
+      let i = 0;
+      i <
+      count;
+      i += 1
+    ) {
+
+      seed =
+        (
+          seed *
+          1664525 +
+          1013904223
+        ) >>> 0;
+
+
+      const ux =
+        (
+          seed &
+          0xffff
+        ) /
+        0xffff;
+
+
+      seed =
+        (
+          seed *
+          1664525 +
+          1013904223
+        ) >>> 0;
+
+
+      const uy =
+        (
+          seed &
+          0xffff
+        ) /
+        0xffff;
+
+
+      const y =
+        top +
+        Math.pow(
+          uy,
+          0.72
+        ) *
+        (
+          h -
+          top
+        );
+
+
+      const perspective =
+        (
+          y -
+          top
+        ) /
+        Math.max(
+          h -
+          top,
+          1
+        );
+
+
+      const widthAtY =
+        w *
+        (
+          0.64 +
+          perspective *
+          0.33
+        );
+
+
+      const x =
+        w *
+        0.50 +
+        (
+          ux -
+          0.5
+        ) *
+        widthAtY;
+
+
+      const center =
+        w *
+        0.50;
+
+
+      const normalizedX =
+        Math.abs(
+          x -
+          center
+        ) /
+        Math.max(
+          widthAtY *
+          0.52,
+          1
+        );
+
+
+      if (
+        normalizedX >
+        1
+      ) {
+        continue;
+      }
+
+
+      ctx.fillStyle =
+        i %
+          4 ===
+        0
+          ? "rgba(83,139,108,0.050)"
+          : "rgba(0,0,0,0.045)";
+
+
+      ctx.fillRect(
+        Math.round(
+          x
+        ),
+        Math.round(
+          y
+        ),
+        1,
+        1
+      );
+    }
+  }
+
+
+  /* ==========================================================================
      DEALER CARDS
-     ======================================================================== */
+     ========================================================================== */
 
   private drawDealerCards(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number
-  ) {
+  ): void {
+
+    const dealerHand =
+      this.state?.casino
+        ?.dealer
+        ?.hand;
+
+
+    if (
+      !dealerHand ||
+      dealerHand.cards.length ===
+      0
+    ) {
+      return;
+    }
+
+
+    const cards =
+      dealerHand.cards;
+
+
     const centerX =
-      w * 0.50;
+      w *
+      0.50;
+
 
     const y =
-      h * 0.39;
+      h *
+      0.465;
 
-    const cardW =
-      35;
 
-    const cardH =
-      52;
+    const width =
+      29;
 
-    /*
-     * Hole card.
-     */
-    this.drawCard(
-      ctx,
-      {
-        rank: "A",
-        suit: "spades",
-        x: centerX - 30,
-        y,
-        width: cardW,
-        height: cardH,
-        rotation: -0.035,
-        faceUp: false,
-        shadow: true,
+
+    const height =
+      43;
+
+
+    const spacing =
+      17;
+
+
+    const totalWidth =
+      (
+        cards.length -
+        1
+      ) *
+      spacing +
+      width;
+
+
+    const startX =
+      centerX -
+      totalWidth /
+      2;
+
+
+    for (
+      let i = 0;
+      i <
+      cards.length;
+      i += 1
+    ) {
+
+      const card =
+        cards[i];
+
+
+      if (
+        !card
+      ) {
+        continue;
       }
-    );
 
-    /*
-     * Up card.
-     */
-    this.drawCard(
-      ctx,
-      {
-        rank: "10",
-        suit: "hearts",
-        x: centerX + 5,
-        y,
-        width: cardW,
-        height: cardH,
-        rotation: 0.035,
-        faceUp: true,
-        shadow: true,
-      }
-    );
+
+      this.drawCard(
+        ctx,
+        this.cardToVisual(
+          card,
+          startX +
+          i *
+          spacing,
+          y,
+          width,
+          height,
+          this.getDealerCardRotation(
+            i,
+            cards.length
+          ),
+          false
+        )
+      );
+    }
   }
 
-  /* ========================================================================
+
+  private getDealerCardRotation(
+    index: number,
+    count: number
+  ): number {
+
+    if (
+      count <=
+      1
+    ) {
+      return 0;
+    }
+
+
+    const center =
+      (
+        count -
+        1
+      ) /
+      2;
+
+
+    return (
+      index -
+      center
+    ) *
+    0.025;
+  }
+
+
+  /* ==========================================================================
+     PERIPHERAL CARDS
+     ========================================================================== */
+
+  private drawPeripheralCards(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number
+  ): void {
+
+    const players =
+      this.state?.casino
+        ?.players ??
+      [];
+
+
+    const leftPlayers =
+      players.filter(
+        (
+          player
+        ) =>
+          player.seat ===
+          1 ||
+          player.seat ===
+          2
+      );
+
+
+    const rightPlayers =
+      players.filter(
+        (
+          player
+        ) =>
+          player.seat ===
+          4 ||
+          player.seat ===
+          5
+      );
+
+
+    if (
+      leftPlayers.length >
+      0
+    ) {
+
+      const left =
+        leftPlayers.find(
+          (
+            player
+          ) =>
+            player.hand.cards.length >
+            0
+        );
+
+
+      if (
+        left
+      ) {
+
+        this.drawSidePlayerHand(
+          ctx,
+          left,
+          w,
+          h,
+          "left"
+        );
+      }
+    }
+
+
+    if (
+      rightPlayers.length >
+      0
+    ) {
+
+      const right =
+        rightPlayers.find(
+          (
+            player
+          ) =>
+            player.hand.cards.length >
+            0
+        );
+
+
+      if (
+        right
+      ) {
+
+        this.drawSidePlayerHand(
+          ctx,
+          right,
+          w,
+          h,
+          "right"
+        );
+      }
+    }
+  }
+
+
+  private drawSidePlayerHand(
+    ctx: CanvasRenderingContext2D,
+    player: Player,
+    w: number,
+    h: number,
+    side: "left" | "right"
+  ): void {
+
+    const cards =
+      player.hand.cards;
+
+
+    if (
+      cards.length ===
+      0
+    ) {
+      return;
+    }
+
+
+    const width =
+      24;
+
+
+    const height =
+      36;
+
+
+    const spacing =
+      17;
+
+
+    const left =
+      side ===
+      "left";
+
+
+    const visibleCards =
+      cards.slice(
+        Math.max(
+          0,
+          cards.length -
+          4
+        )
+      );
+
+
+    const baseX =
+      left
+        ? w *
+          0.145
+        : w *
+          0.855 -
+          Math.min(
+            visibleCards.length *
+            spacing,
+            72
+          );
+
+
+    const y =
+      h *
+      0.645;
+
+
+    for (
+      let i = 0;
+      i <
+      visibleCards.length;
+      i += 1
+    ) {
+
+      const card =
+        visibleCards[i];
+
+
+      if (
+        !card
+      ) {
+        continue;
+      }
+
+
+      const x =
+        baseX +
+        i *
+        spacing;
+
+
+      const centerOffset =
+        i -
+        (
+          visibleCards.length -
+          1
+        ) /
+        2;
+
+
+      const rotation =
+        left
+          ? centerOffset *
+            0.045
+          : -centerOffset *
+            0.045;
+
+
+      this.drawCard(
+        ctx,
+        this.cardToVisual(
+          card,
+          x,
+          y,
+          width,
+          height,
+          rotation,
+          false
+        )
+      );
+    }
+  }
+
+
+  /* ==========================================================================
      PLAYER CARDS
-     ======================================================================== */
+     ========================================================================== */
 
   private drawPlayerCards(
     ctx: CanvasRenderingContext2D,
     w: number,
-    h: number
-  ) {
+    h: number,
+    zoom: number
+  ): void {
+
+    const human =
+      this.state?.casino
+        ?.players
+        ?.find(
+          (
+            player
+          ) =>
+            player.type ===
+            "human"
+        );
+
+
+    if (
+      !human
+    ) {
+      return;
+    }
+
+
     const centerX =
-      w * 0.50;
+      w *
+      0.50;
 
-    const y =
-      h * 0.68;
 
-    const cardW =
-      43;
+    const baseY =
+      h *
+      0.70;
 
-    const cardH =
-      62;
 
-    /*
-     * First card.
-     */
-    this.drawCard(
+    const width =
+      Math.round(
+        48 *
+        zoom
+      );
+
+
+    const height =
+      Math.round(
+        70 *
+        zoom
+      );
+
+
+    const spread =
+      Math.round(
+        width *
+        0.70
+      );
+
+
+    this.drawHandNearCamera(
       ctx,
-      {
-        rank: "10",
-        suit: "spades",
-        x:
-          centerX -
-          cardW -
-          8,
-        y,
-        width: cardW,
-        height: cardH,
-        rotation: -0.055,
-        faceUp: true,
-        shadow: true,
-      }
+      human.hand,
+      centerX,
+      baseY,
+      width,
+      height,
+      spread,
+      0
     );
 
-    /*
-     * Second card.
-     */
-    this.drawCard(
-      ctx,
-      {
-        rank: "8",
-        suit: "hearts",
-        x:
-          centerX +
-          8,
-        y,
-        width: cardW,
-        height: cardH,
-        rotation: 0.055,
-        faceUp: true,
-        shadow: true,
-      }
-    );
+
+    if (
+      human.secondaryHand
+    ) {
+
+      const secondary =
+        human.secondaryHand;
+
+
+      this.drawHandNearCamera(
+        ctx,
+        secondary,
+        centerX +
+        width *
+        0.68,
+        baseY +
+        3,
+        Math.max(
+          32,
+          Math.round(
+            width *
+            0.84
+          )
+        ),
+        Math.max(
+          48,
+          Math.round(
+            height *
+            0.84
+          )
+        ),
+        Math.max(
+          20,
+          Math.round(
+            spread *
+            0.70
+          )
+        ),
+        1
+      );
+    }
   }
 
-  /* ========================================================================
-     CARD RENDERER
-     ======================================================================== */
+
+  private drawHandNearCamera(
+    ctx: CanvasRenderingContext2D,
+    hand: Hand,
+    centerX: number,
+    baseY: number,
+    width: number,
+    height: number,
+    spread: number,
+    handIndex: number
+  ): void {
+
+    const cards =
+      hand.cards;
+
+
+    if (
+      cards.length ===
+      0
+    ) {
+      return;
+    }
+
+
+    const spacing =
+      cards.length <=
+      2
+        ? spread
+        : Math.max(
+            Math.round(
+              spread *
+              0.62
+            ),
+            Math.round(
+              width *
+              0.38
+            )
+          );
+
+
+    const totalWidth =
+      (
+        cards.length -
+        1
+      ) *
+      spacing +
+      width;
+
+
+    const startX =
+      centerX -
+      totalWidth /
+      2;
+
+
+    for (
+      let i = 0;
+      i <
+      cards.length;
+      i += 1
+    ) {
+
+      const card =
+        cards[i];
+
+
+      if (
+        !card
+      ) {
+        continue;
+      }
+
+
+      const centerOffset =
+        i -
+        (
+          cards.length -
+          1
+        ) /
+        2;
+
+
+      const rotation =
+        centerOffset *
+        0.065 +
+        hand.rotation *
+        0.25;
+
+
+      const x =
+        startX +
+        i *
+        spacing;
+
+
+      const y =
+        baseY +
+        Math.abs(
+          centerOffset
+        ) *
+        1.4;
+
+
+      this.drawCard(
+        ctx,
+        this.cardToVisual(
+          card,
+          x,
+          y,
+          width,
+          height,
+          rotation,
+          true
+        )
+      );
+    }
+
+
+    /*
+     * Split-hand divider.
+     */
+    if (
+      handIndex ===
+      1
+    ) {
+
+      ctx.fillStyle =
+        "rgba(197,163,92,0.22)";
+
+
+      ctx.fillRect(
+        Math.round(
+          centerX -
+          width *
+          0.58
+        ),
+        Math.round(
+          baseY -
+          8
+        ),
+        1,
+        Math.round(
+          height *
+          0.72
+        )
+      );
+    }
+  }
+
+
+  /* ==========================================================================
+     CARD CONVERSION
+     ========================================================================== */
+
+  private cardToVisual(
+    card: Card,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    rotation: number,
+    emphasis: boolean
+  ): CardVisual {
+
+    return {
+      card,
+
+      rank:
+        String(
+          card.rank
+        ),
+
+      suit:
+        card.suit,
+
+      x,
+
+      y,
+
+      width,
+
+      height,
+
+      rotation,
+
+      faceUp:
+        card.faceUp,
+
+      shadow:
+        true,
+
+      emphasis,
+
+      opacity:
+        this.safeNumber(
+          card.transform.opacity,
+          1
+        ),
+    };
+  }
+
+
+  /* ==========================================================================
+     CARD RENDERING
+     ========================================================================== */
 
   private drawCard(
     ctx: CanvasRenderingContext2D,
-    card: CardVisual
-  ) {
+    visual: CardVisual
+  ): void {
+
     const {
       x,
       y,
@@ -2363,46 +3439,91 @@ export class Renderer {
       faceUp,
       rank,
       suit,
-    } = card;
+    } = visual;
+
 
     ctx.save();
 
+
+    ctx.globalAlpha =
+      this.clamp(
+        visual.opacity ??
+        1,
+        0,
+        1
+      );
+
+
     ctx.translate(
-      x + width / 2,
-      y + height / 2
+      x +
+      width /
+      2,
+      y +
+      height /
+      2
     );
+
 
     ctx.rotate(
       rotation
     );
 
+
     ctx.translate(
-      -width / 2,
-      -height / 2
+      -width /
+      2,
+      -height /
+      2
     );
 
-    /*
-     * Shadow.
-     */
+
+    /* Shadow. */
+
     if (
-      card.shadow !== false
+      visual.shadow !==
+      false
     ) {
+
       ctx.fillStyle =
-        "rgba(0,0,0,0.48)";
+        "rgba(0,0,0,0.54)";
+
 
       ctx.fillRect(
         3,
-        4,
+        5,
         width,
         height
       );
+
+
+      if (
+        visual.emphasis
+      ) {
+
+        ctx.fillStyle =
+          "rgba(0,0,0,0.20)";
+
+
+        ctx.fillRect(
+          6,
+          height +
+          4,
+          Math.max(
+            1,
+            width -
+            10
+          ),
+          3
+        );
+      }
     }
 
-    /*
-     * Main card.
-     */
+
+    /* Card body. */
+
     ctx.fillStyle =
       COLORS.card;
+
 
     this.roundRect(
       ctx,
@@ -2413,470 +3534,695 @@ export class Renderer {
       2
     );
 
+
     ctx.fill();
 
-    /*
-     * Card edge.
-     */
+
+    /* Border. */
+
     ctx.strokeStyle =
       COLORS.cardEdge;
 
+
     ctx.lineWidth =
       1;
+
 
     this.roundRect(
       ctx,
       0.5,
       0.5,
-      width - 1,
-      height - 1,
+      width -
+      1,
+      height -
+      1,
       2
     );
 
+
     ctx.stroke();
 
-    /*
-     * Hole card.
-     */
-    if (!faceUp) {
+
+    /* Highlight. */
+
+    ctx.fillStyle =
+      "rgba(255,255,255,0.12)";
+
+
+    ctx.fillRect(
+      2,
+      2,
+      Math.max(
+        1,
+        width -
+        4
+      ),
+      1
+    );
+
+
+    /* Card back. */
+
+    if (
+      !faceUp
+    ) {
+
+      this.drawCardBackInside(
+        ctx,
+        width,
+        height
+      );
+
+
       ctx.restore();
 
-      this.drawCardBack(
-        ctx,
-        x,
-        y,
-        width,
-        height,
-        rotation
-      );
 
       return;
     }
 
-    /*
-     * Suit color from Entities.ts.
-     */
+
+    /* Suit / rank color. */
+
     ctx.fillStyle =
       getSuitColor(
         suit
       );
 
-    /*
-     * Top rank.
-     */
+
+    /* Rank. */
+
     ctx.font =
-      width < 40
-        ? "700 11px 'Courier New', monospace"
-        : "700 13px 'Courier New', monospace";
+      width >=
+      42
+        ? FONT.medium
+        : FONT.small;
+
 
     ctx.textAlign =
       "left";
 
+
     ctx.textBaseline =
       "top";
 
+
     ctx.fillText(
       rank,
-      5,
+      4,
       4
     );
 
-    /*
-     * Top suit.
-     */
+
+    /* Small suit. */
+
     ctx.font =
-      width < 40
-        ? "700 9px serif"
-        : "700 11px serif";
+      width >=
+      42
+        ? "700 10px serif"
+        : "700 8px serif";
+
 
     ctx.fillText(
       getSuitGlyph(
         suit
       ),
-      6,
-      17
+      5,
+      width >=
+      42
+        ? 15
+        : 13
     );
 
-    /*
-     * Center pip.
-     */
+
+    /* Main suit pip. */
+
     ctx.textAlign =
       "center";
+
 
     ctx.textBaseline =
       "middle";
 
+
     ctx.font =
-      width < 40
-        ? "700 20px serif"
-        : "700 26px serif";
+      width >=
+      42
+        ? "700 27px serif"
+        : "700 18px serif";
+
 
     ctx.fillText(
       getSuitGlyph(
         suit
       ),
-      width / 2,
-      height / 2 + 1
+      width /
+      2,
+      height /
+      2
     );
 
-    /*
-     * Bottom rank.
-     */
+
+    /* Bottom rank. */
+
     ctx.textAlign =
       "right";
+
 
     ctx.textBaseline =
       "bottom";
 
+
     ctx.font =
-      width < 40
-        ? "700 10px 'Courier New', monospace"
-        : "700 12px 'Courier New', monospace";
+      width >=
+      42
+        ? FONT.small
+        : "700 6px 'Courier New', monospace";
+
 
     ctx.fillText(
       rank,
-      width - 5,
-      height - 4
+      width -
+      4,
+      height -
+      4
     );
 
-    /*
-     * Bottom suit.
-     */
+
+    /* Bottom suit. */
+
     ctx.font =
-      width < 40
+      width >=
+      42
         ? "700 8px serif"
-        : "700 10px serif";
+        : "700 6px serif";
+
 
     ctx.fillText(
       getSuitGlyph(
         suit
       ),
-      width - 6,
-      height - 16
+      width -
+      5,
+      height -
+      14
     );
 
-    /*
-     * Card highlight.
-     */
-    ctx.fillStyle =
-      "rgba(255,255,255,0.16)";
 
-    ctx.fillRect(
-      2,
-      2,
-      width - 4,
-      1
-    );
+    /* Active emphasis. */
+
+    if (
+      visual.emphasis
+    ) {
+
+      ctx.strokeStyle =
+        "rgba(231,209,142,0.28)";
+
+
+      ctx.lineWidth =
+        1;
+
+
+      this.roundRect(
+        ctx,
+        1.5,
+        1.5,
+        width -
+        3,
+        height -
+        3,
+        2
+      );
+
+
+      ctx.stroke();
+    }
+
 
     ctx.restore();
   }
 
-  /* ========================================================================
-     BET / CHIPS
-     ======================================================================== */
 
-  private drawBetAndChips(
+  private drawCardBackInside(
     ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number
-  ) {
-    const cx =
-      w * 0.50;
+    width: number,
+    height: number
+  ): void {
 
-    const cy =
-      h * 0.77;
-
-    /*
-     * Bet area shadow.
-     */
     ctx.fillStyle =
-      "rgba(0,0,0,0.24)";
+      COLORS.feltMid;
 
-    ctx.beginPath();
 
-    ctx.arc(
-      cx,
-      cy,
-      35,
-      0,
-      TAU
+    ctx.fillRect(
+      2,
+      2,
+      Math.max(
+        1,
+        width -
+        4
+      ),
+      Math.max(
+        1,
+        height -
+        4
+      )
     );
 
-    ctx.fill();
 
-    /*
-     * Outer betting ring.
-     */
     ctx.strokeStyle =
-      "rgba(197,163,92,0.32)";
+      "rgba(206,177,101,0.74)";
+
 
     ctx.lineWidth =
       1;
 
-    ctx.beginPath();
 
-    ctx.arc(
-      cx,
-      cy,
-      34,
-      0,
-      TAU
+    ctx.strokeRect(
+      3,
+      3,
+      Math.max(
+        1,
+        width -
+        6
+      ),
+      Math.max(
+        1,
+        height -
+        6
+      )
     );
 
-    ctx.stroke();
 
     /*
-     * Inner ring.
-     */
-    ctx.strokeStyle =
-      "rgba(197,163,92,0.11)";
-
-    ctx.beginPath();
-
-    ctx.arc(
-      cx,
-      cy,
-      28,
-      0,
-      TAU
-    );
-
-    ctx.stroke();
-
-    /*
-     * Label.
+     * Diamond lattice.
      */
     ctx.fillStyle =
-      "rgba(231,225,211,0.44)";
+      "rgba(226,199,119,0.63)";
+
+
+    const stepX =
+      Math.max(
+        5,
+        Math.floor(
+          width /
+          5
+        )
+      );
+
+
+    const stepY =
+      Math.max(
+        6,
+        Math.floor(
+          height /
+          6
+        )
+      );
+
+
+    for (
+      let y = 6;
+      y <
+      height -
+      6;
+      y += stepY
+    ) {
+
+      for (
+        let x = 6;
+        x <
+        width -
+        6;
+        x += stepX
+      ) {
+
+        ctx.fillRect(
+          x,
+          y,
+          2,
+          2
+        );
+      }
+    }
+  }
+
+
+  /* ==========================================================================
+     PLAYER CHIPS
+     ========================================================================== */
+
+  private drawPlayerChips(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    zoom: number
+  ): void {
+
+    const human =
+      this.state?.casino
+        ?.players
+        ?.find(
+          (
+            player
+          ) =>
+            player.type ===
+            "human"
+        );
+
+
+    if (
+      !human
+    ) {
+      return;
+    }
+
+
+    if (
+      !this.state?.casino
+        ?.chipsVisible
+    ) {
+      return;
+    }
+
+
+    const stack =
+      human.chips;
+
+
+    if (
+      !stack ||
+      !stack.visible ||
+      stack.chips.length ===
+      0
+    ) {
+      return;
+    }
+
+
+    const cx =
+      w *
+      0.50;
+
+
+    const baseY =
+      h *
+      0.82;
+
+
+    const radius =
+      Math.max(
+        10,
+        Math.round(
+          11 *
+          zoom
+        )
+      );
+
+
+    const visible =
+      stack.chips.slice(
+        -12
+      );
+
+
+    for (
+      let i = 0;
+      i <
+      visible.length;
+      i += 1
+    ) {
+
+      const chip =
+        visible[i];
+
+
+      if (
+        !chip
+      ) {
+        continue;
+      }
+
+
+      const chipX =
+        cx +
+        57 +
+        (
+          i %
+          2
+        ) *
+        2;
+
+
+      const chipY =
+        baseY +
+        9 -
+        (
+          visible.length -
+          1 -
+          i
+        ) *
+        5;
+
+
+      this.drawChip(
+        ctx,
+        {
+          value:
+            chip.value,
+
+          x:
+            chipX,
+
+          y:
+            chipY,
+
+          radius,
+
+          rotation:
+            this.safeNumber(
+              chip.transform.rotation,
+              0
+            ),
+
+          color:
+            getChipHex(
+              chip.color
+            ),
+
+          stackIndex:
+            chip.stackIndex,
+        }
+      );
+    }
+
+
+    /*
+     * Real bet display.
+     */
+    ctx.fillStyle =
+      "rgba(225,199,119,0.58)";
+
 
     ctx.font =
-      "700 6px 'Courier New', monospace";
+      FONT.tiny;
+
 
     ctx.textAlign =
       "center";
 
+
     ctx.textBaseline =
       "middle";
 
-    ctx.fillText(
-      "YOUR BET",
-      cx,
-      cy - 7
-    );
-
-    /*
-     * Current bet.
-     */
-    ctx.fillStyle =
-      COLORS.goldLight;
-
-    ctx.font =
-      FONT.medium;
 
     ctx.fillText(
-      "$25",
+      `BET $${Math.max(
+        0,
+        Math.floor(
+          this.safeNumber(
+            human.bet,
+            0
+          )
+        )
+      )}`,
       cx,
-      cy + 6
+      baseY +
+      27
     );
-
-    /*
-     * Chips.
-     */
-    const chips: ChipVisual[] = [
-      {
-        value: 5,
-        x: cx + 50,
-        y: cy + 12,
-        radius: 11,
-        rotation: -0.08,
-        color: COLORS.chipRed,
-      },
-      {
-        value: 5,
-        x: cx + 50,
-        y: cy + 7,
-        radius: 11,
-        rotation: 0.04,
-        color: COLORS.chipRed,
-      },
-      {
-        value: 5,
-        x: cx + 50,
-        y: cy + 2,
-        radius: 11,
-        rotation: -0.03,
-        color: COLORS.chipRed,
-      },
-      {
-        value: 10,
-        x: cx + 50,
-        y: cy - 3,
-        radius: 11,
-        rotation: 0.07,
-        color: COLORS.chipBlue,
-      },
-    ];
-
-    for (
-      const chip of chips
-    ) {
-      this.drawChip(
-        ctx,
-        chip
-      );
-    }
   }
+
 
   private drawChip(
     ctx: CanvasRenderingContext2D,
     chip: ChipVisual
-  ) {
+  ): void {
+
+    const r =
+      chip.radius;
+
+
     ctx.save();
+
 
     ctx.translate(
       chip.x,
       chip.y
     );
 
+
     ctx.rotate(
       chip.rotation
     );
 
-    /*
-     * Shadow.
-     */
+
+    /* Shadow. */
+
     ctx.fillStyle =
-      "rgba(0,0,0,0.52)";
+      "rgba(0,0,0,0.58)";
+
 
     ctx.beginPath();
+
 
     ctx.ellipse(
       2,
       3,
-      chip.radius,
-      chip.radius * 0.82,
+      r,
+      r *
+      0.76,
       0,
       0,
       TAU
     );
 
+
     ctx.fill();
 
-    /*
-     * Main chip.
-     */
+
+    /* Main chip. */
+
     ctx.fillStyle =
-      chip.color ??
-      COLORS.chipRed;
+      chip.color;
+
 
     ctx.beginPath();
+
 
     ctx.arc(
       0,
       0,
-      chip.radius,
+      r,
       0,
       TAU
     );
 
+
     ctx.fill();
 
-    /*
-     * Gold outline.
-     */
+
+    /* Outer ring. */
+
     ctx.strokeStyle =
-      "rgba(235,210,139,0.70)";
+      "rgba(238,216,152,0.70)";
+
 
     ctx.lineWidth =
       1;
 
-    ctx.beginPath();
-
-    ctx.arc(
-      0,
-      0,
-      chip.radius - 1,
-      0,
-      TAU
-    );
 
     ctx.stroke();
 
-    /*
-     * Inner field.
-     */
+
+    /* Inner field. */
+
     ctx.fillStyle =
-      "rgba(20,20,20,0.26)";
+      "rgba(15,20,17,0.24)";
+
 
     ctx.beginPath();
+
 
     ctx.arc(
       0,
       0,
-      chip.radius * 0.65,
+      r *
+      0.64,
       0,
       TAU
     );
 
+
     ctx.fill();
 
-    /*
-     * Edge notches.
-     *
-     * IMPORTANT:
-     * Do not use COLORS.ivory because that key does not exist
-     * in the shared Entities.ts color table.
-     */
+
+    /* Notches. */
+
     ctx.fillStyle =
       COLORS.cardLight;
 
+
     for (
       let i = 0;
-      i < 8;
-      i++
+      i <
+      8;
+      i += 1
     ) {
-      const a =
+
+      const angle =
         (
-          i / 8
+          i /
+          8
         ) *
         TAU;
 
-      const nx =
-        Math.cos(a) *
-        chip.radius *
-        0.80;
 
-      const ny =
-        Math.sin(a) *
-        chip.radius *
-        0.80;
+      const x =
+        Math.cos(
+          angle
+        ) *
+        r *
+        0.79;
+
+
+      const y =
+        Math.sin(
+          angle
+        ) *
+        r *
+        0.79;
+
 
       ctx.fillRect(
         Math.round(
-          nx - 1
+          x -
+          1
         ),
         Math.round(
-          ny - 1
+          y -
+          1
         ),
         2,
         2
       );
     }
 
-    /*
-     * Denomination.
-     */
+
+    /* Value. */
+
     ctx.fillStyle =
       COLORS.cardLight;
 
+
     ctx.font =
-      "700 6px 'Courier New', monospace";
+      "700 5px 'Courier New', monospace";
+
 
     ctx.textAlign =
       "center";
 
+
     ctx.textBaseline =
       "middle";
+
 
     ctx.fillText(
       `$${chip.value}`,
@@ -2884,163 +4230,567 @@ export class Renderer {
       0
     );
 
+
     ctx.restore();
   }
 
-  /* ========================================================================
-     TABLE DETAILS
-     ======================================================================== */
 
-  private drawTableDetails(
+  /* ==========================================================================
+     TABLE MARKINGS
+     ========================================================================== */
+
+  private drawTableMarkings(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number
-  ) {
-    const cx =
-      w * 0.50;
+  ): void {
 
-    const cy =
-      h * 0.61;
+    const table =
+      this.state?.casino
+        ?.table;
+
+
+    if (
+      !table
+    ) {
+      return;
+    }
+
+
+    const cx =
+      w *
+      0.50;
+
 
     /*
      * Dealer rule.
      */
     ctx.fillStyle =
-      "rgba(197,163,92,0.50)";
+      "rgba(197,163,92,0.44)";
+
 
     ctx.font =
-      "700 6px 'Courier New', monospace";
+      FONT.tiny;
+
 
     ctx.textAlign =
       "center";
 
+
     ctx.textBaseline =
       "middle";
 
+
+    const dealerRule =
+      table.dealerHitsSoft17
+        ? "DEALER HITS SOFT 17"
+        : "DEALER STANDS ON 17";
+
+
     ctx.fillText(
-      "DEALER STANDS ON 17",
+      dealerRule,
       cx,
-      cy - h * 0.055
+      h *
+      0.585
     );
+
 
     /*
      * Blackjack payout.
      */
     ctx.fillStyle =
-      "rgba(231,225,211,0.30)";
+      "rgba(231,225,211,0.26)";
+
 
     ctx.fillText(
-      "BLACKJACK PAYS 3 : 2",
+      `BLACKJACK PAYS ${
+        table.blackjackPayout ===
+        1.5
+          ? "3 : 2"
+          : `${table.blackjackPayout} : 1`
+      }`,
       cx,
-      cy + h * 0.10
+      h *
+      0.61
     );
 
-    /*
-     * Minimum.
-     */
-    ctx.textAlign =
-      "left";
-
-    ctx.fillText(
-      "MIN $5",
-      w * 0.16,
-      h * 0.81
-    );
 
     /*
-     * Maximum.
+     * Minimum / maximum.
      */
-    ctx.textAlign =
-      "right";
+    ctx.fillStyle =
+      "rgba(197,163,92,0.20)";
+
+
+    ctx.font =
+      "700 5px 'Courier New', monospace";
+
 
     ctx.fillText(
-      "MAX $500",
-      w * 0.84,
-      h * 0.81
+      `MIN $${table.minimumBet}  MAX $${table.maximumBet}`,
+      cx,
+      h *
+      0.645
     );
   }
 
-  /* ========================================================================
-     FOREGROUND LIGHTING
-     ======================================================================== */
 
-  private drawForegroundLighting(
+  /* ==========================================================================
+     GAME STATUS ATMOSPHERE
+     ========================================================================== */
+
+  private drawGameStatusAtmosphere(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number
-  ) {
+  ): void {
+
+    const blackjack =
+      this.state?.blackjack;
+
+
+    if (
+      !blackjack
+    ) {
+      return;
+    }
+
+
+    const cx =
+      w *
+      0.50;
+
+
+    let text:
+      | string
+      | null =
+      null;
+
+
+    switch (
+      blackjack.phase
+    ) {
+
+      case "betting":
+        text =
+          "PLACE YOUR BET";
+        break;
+
+
+      case "insurance":
+        text =
+          "INSURANCE";
+        break;
+
+
+      case "player-turn":
+
+        if (
+          blackjack.activeSeat ===
+          this.getHumanSeat()
+        ) {
+          text =
+            "YOUR TURN";
+        }
+
+        break;
+
+
+      case "dealer-turn":
+        text =
+          "DEALER";
+        break;
+
+
+      case "settlement":
+        text =
+          "SETTLING";
+        break;
+
+
+      case "complete":
+        text =
+          this.getHumanResultText();
+        break;
+
+
+      default:
+        break;
+    }
+
+
+    if (
+      !text
+    ) {
+      return;
+    }
+
+
+    const y =
+      h *
+      0.535;
+
+
+    ctx.fillStyle =
+      this.getStatusAlpha(
+        blackjack.phase
+      );
+
+
+    ctx.font =
+      FONT.tiny;
+
+
+    ctx.textAlign =
+      "center";
+
+
+    ctx.textBaseline =
+      "middle";
+
+
+    ctx.fillText(
+      text,
+      cx,
+      y
+    );
+  }
+
+
+  private getStatusAlpha(
+    phase: string
+  ): string {
+
+    switch (
+      phase
+    ) {
+
+      case "player-turn":
+        return "rgba(231,209,142,0.72)";
+
+      case "dealer-turn":
+        return "rgba(216,225,211,0.48)";
+
+      case "complete":
+        return "rgba(231,209,142,0.65)";
+
+      default:
+        return "rgba(197,163,92,0.45)";
+    }
+  }
+
+
+  private getHumanSeat(): number {
+
+    return (
+      this.state?.casino
+        ?.players
+        ?.find(
+          (
+            player
+          ) =>
+            player.type ===
+            "human"
+        )
+        ?.seat ??
+      3
+    );
+  }
+
+
+  private getHumanResultText(): string {
+
+    const settlements =
+      this.state?.blackjack
+        ?.settlements ??
+      [];
+
+
+    const human =
+      this.state?.casino
+        ?.players
+        ?.find(
+          (
+            player
+          ) =>
+            player.type ===
+            "human"
+        );
+
+
+    if (
+      !human
+    ) {
+      return "ROUND OVER";
+    }
+
+
+    const result =
+      settlements.find(
+        (
+          settlement
+        ) => {
+
+          if (
+            settlement.playerId !==
+            human.id
+          ) {
+            return false;
+          }
+
+
+          return (
+            typeof settlement.handId ===
+            "string" &&
+            !settlement.handId.startsWith(
+              "insurance-"
+            )
+          );
+        }
+      );
+
+
+    if (
+      !result
+    ) {
+      return "ROUND OVER";
+    }
+
+
+    switch (
+      result.result
+    ) {
+
+      case "blackjack":
+        return "BLACKJACK";
+
+      case "win":
+        return "YOU WIN";
+
+      case "loss":
+      case "bust":
+        return "YOU LOSE";
+
+      case "push":
+        return "PUSH";
+
+      case "surrender":
+        return "SURRENDER";
+
+      default:
+        return "ROUND OVER";
+    }
+  }
+
+
+  /* ==========================================================================
+     FOREGROUND PRESENCE
+     ========================================================================== */
+
+  private drawForegroundPresence(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number
+  ): void {
+
+    ctx.fillStyle =
+      "rgba(2,4,3,0.58)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      0,
+      h
+    );
+
+
+    ctx.lineTo(
+      0,
+      h *
+      0.93
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.18,
+      h *
+      0.87,
+      w *
+      0.32,
+      h *
+      0.91
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.50,
+      h *
+      0.96,
+      w *
+      0.68,
+      h *
+      0.91
+    );
+
+
+    ctx.quadraticCurveTo(
+      w *
+      0.82,
+      h *
+      0.87,
+      w,
+      h *
+      0.93
+    );
+
+
+    ctx.lineTo(
+      w,
+      h
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
     /*
-     * Top vignette.
+     * Abstract foreground cuffs / hands.
+     */
+    ctx.fillStyle =
+      "rgba(65,54,44,0.24)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.27
+      ),
+      Math.round(
+        h *
+        0.91
+      ),
+      18,
+      4
+    );
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.69
+      ),
+      Math.round(
+        h *
+        0.91
+      ),
+      18,
+      4
+    );
+  }
+
+
+  /* ==========================================================================
+     FINAL PIXEL TREATMENT
+     ========================================================================== */
+
+  private drawFinalPixelTreatment(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number
+  ): void {
+
+    /*
+     * Top darkness.
      */
     const top =
       ctx.createLinearGradient(
         0,
         0,
         0,
-        h * 0.42
+        h *
+        0.36
       );
+
 
     top.addColorStop(
       0,
-      "rgba(0,0,0,0.50)"
+      "rgba(0,0,0,0.34)"
     );
 
+
     top.addColorStop(
-      0.65,
-      "rgba(0,0,0,0.08)"
+      0.72,
+      "rgba(0,0,0,0.035)"
     );
+
 
     top.addColorStop(
       1,
       "rgba(0,0,0,0)"
     );
 
+
     ctx.fillStyle =
       top;
+
 
     ctx.fillRect(
       0,
       0,
       w,
-      h * 0.44
+      h *
+      0.40
     );
 
+
     /*
-     * Main vignette.
+     * Vignette.
      */
-    const centerX =
-      w * 0.50;
-
-    const centerY =
-      h * 0.56;
-
     const vignette =
       ctx.createRadialGradient(
-        centerX,
-        centerY,
-        h * 0.17,
-        centerX,
-        centerY,
-        w * 0.64
+        w *
+        0.50,
+        h *
+        0.52,
+        h *
+        0.15,
+        w *
+        0.50,
+        h *
+        0.52,
+        w *
+        0.76
       );
+
 
     vignette.addColorStop(
       0,
       "rgba(0,0,0,0)"
     );
 
+
     vignette.addColorStop(
-      0.73,
-      "rgba(0,0,0,0.08)"
+      0.72,
+      "rgba(0,0,0,0.055)"
     );
+
 
     vignette.addColorStop(
       1,
-      "rgba(0,0,0,0.58)"
+      "rgba(0,0,0,0.42)"
     );
+
 
     ctx.fillStyle =
       vignette;
+
 
     ctx.fillRect(
       0,
@@ -3049,17 +4799,21 @@ export class Renderer {
       h
     );
 
+
     /*
-     * Subtle scanlines.
+     * Subtle scan structure.
      */
     ctx.fillStyle =
-      "rgba(255,255,255,0.006)";
+      "rgba(255,255,255,0.012)";
+
 
     for (
       let y = 0;
-      y < h;
-      y += 3
+      y <
+      h;
+      y += 4
     ) {
+
       ctx.fillRect(
         0,
         y,
@@ -3067,11 +4821,33 @@ export class Renderer {
         1
       );
     }
+
+
+    /*
+     * Pixel frame.
+     */
+    ctx.strokeStyle =
+      "rgba(0,0,0,0.44)";
+
+
+    ctx.lineWidth =
+      2;
+
+
+    ctx.strokeRect(
+      1,
+      1,
+      w -
+      2,
+      h -
+      2
+    );
   }
 
-  /* ========================================================================
-     GEOMETRY
-     ======================================================================== */
+
+  /* ==========================================================================
+     ROUND RECT
+     ========================================================================== */
 
   private roundRect(
     ctx: CanvasRenderingContext2D,
@@ -3080,81 +4856,154 @@ export class Renderer {
     width: number,
     height: number,
     radius: number
-  ) {
+  ): void {
+
     const r =
       Math.max(
         0,
         Math.min(
           radius,
-          width / 2,
-          height / 2
+          width /
+          2,
+          height /
+          2
         )
       );
 
+
     ctx.beginPath();
 
+
     ctx.moveTo(
-      x + r,
+      x +
+      r,
       y
     );
+
 
     ctx.lineTo(
-      x + width - r,
+      x +
+      width -
+      r,
       y
     );
 
+
     ctx.quadraticCurveTo(
-      x + width,
+      x +
+      width,
       y,
-      x + width,
-      y + r
+      x +
+      width,
+      y +
+      r
     );
 
+
     ctx.lineTo(
-      x + width,
-      y + height - r
+      x +
+      width,
+      y +
+      height -
+      r
     );
+
 
     ctx.quadraticCurveTo(
-      x + width,
-      y + height,
-      x + width - r,
-      y + height
+      x +
+      width,
+      y +
+      height,
+      x +
+      width -
+      r,
+      y +
+      height
     );
 
+
     ctx.lineTo(
-      x + r,
-      y + height
+      x +
+      r,
+      y +
+      height
     );
+
 
     ctx.quadraticCurveTo(
       x,
-      y + height,
+      y +
+      height,
       x,
-      y + height - r
+      y +
+      height -
+      r
     );
+
 
     ctx.lineTo(
       x,
-      y + r
+      y +
+      r
     );
+
 
     ctx.quadraticCurveTo(
       x,
       y,
-      x + r,
+      x +
+      r,
       y
     );
+
 
     ctx.closePath();
   }
 
-  /* ========================================================================
-     CLEANUP
-     ======================================================================== */
 
-  destroy() {
+  /* ==========================================================================
+     NUMBER SAFETY
+     ========================================================================== */
+
+  private safeNumber(
+    value:
+      | number
+      | undefined,
+    fallback: number
+  ): number {
+
+    return Number.isFinite(
+      value
+    )
+      ? value as number
+      : fallback;
+  }
+
+
+  private clamp(
+    value: number,
+    min: number,
+    max: number
+  ): number {
+
+    return Math.max(
+      min,
+      Math.min(
+        max,
+        value
+      )
+    );
+  }
+
+
+  /* ==========================================================================
+     CLEANUP
+     ========================================================================== */
+
+  destroy(): void {
+
     this.ctx.save();
+
 
     this.ctx.setTransform(
       this.dpr,
@@ -3165,6 +5014,7 @@ export class Renderer {
       0
     );
 
+
     this.ctx.clearRect(
       0,
       0,
@@ -3172,9 +5022,12 @@ export class Renderer {
       this.height
     );
 
+
     this.ctx.restore();
 
+
     this.internalCtx.save();
+
 
     this.internalCtx.setTransform(
       1,
@@ -3185,18 +5038,27 @@ export class Renderer {
       0
     );
 
+
     this.internalCtx.clearRect(
       0,
       0,
-      this.internalCanvas.width,
-      this.internalCanvas.height
+      this.sceneWidth,
+      this.sceneHeight
     );
+
 
     this.internalCtx.restore();
 
-    this.state = null;
 
-    this.time = 0;
-    this.delta = 0;
+    this.state =
+      null;
+
+
+    this.time =
+      0;
+
+
+    this.delta =
+      0;
   }
 }

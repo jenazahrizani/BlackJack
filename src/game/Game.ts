@@ -1,10 +1,6 @@
-import { Renderer } from "./Renderer";
-import { Animation } from "./Animation";
-import { Input } from "./Input";
-
 /* ==========================================================================
    BLACKJACK 21 — GAME DIRECTOR
-
+   --------------------------------------------------------------------------
    Responsibilities:
    - Canvas lifecycle
    - Render loop
@@ -12,15 +8,17 @@ import { Input } from "./Input";
    - Responsive sizing
    - Camera / visual state
    - Ambient motion
-   - Pointer state
-   - Keyboard shortcuts
-   - Connection to Renderer / Animation / Input
+   - Input coordination
+   - Blackjack engine coordination
+   - Animation coordination
+   - Renderer coordination
+   - Public gameplay API
 
    Architecture:
 
       Browser
          │
-         ├── Pointer / Touch / Keyboard
+         ├── Keyboard / Pointer / HUD
          │
          ▼
        Input.ts
@@ -28,17 +26,47 @@ import { Input } from "./Input";
          ▼
        Game.ts
          │
-         ├── Animation.ts
+         ├──────────────► Blackjack.ts
          │
-         ▼
-      Renderer.ts
+         ├──────────────► Animation.ts
+         │
+         └──────────────► Renderer.ts
 
-   IMPORTANT:
-   Input.ts owns pointer interaction internally.
-   Game.ts therefore does NOT call:
-     - input.pointerMove()
-     - input.pointerDown()
-     - input.pointerUp()
+   IMPORTANT
+   --------------------------------------------------------------------------
+   Blackjack.ts is the authority for gameplay state and rules.
+
+   Game.ts is the integration / lifecycle layer.
+
+   Renderer.ts is presentation only.
+
+   CRITICAL STATE RULE
+   --------------------------------------------------------------------------
+   syncBlackjackState() MUST NEVER mutate Blackjack.ts state.
+
+   The engine transition from "waiting" to "betting" happens only after
+   the Game object has completed its complete startup initialization.
+   ========================================================================== */
+
+import { Renderer } from "./Renderer";
+import { Animation } from "./Animation";
+import { Input } from "./Input";
+
+import {
+  Blackjack,
+  type ActionResult,
+  type GameAction,
+  type RoundPhase,
+  type BlackjackEvent,
+} from "./Blackjack";
+
+import type {
+  TableVisualState,
+} from "./Entities";
+
+
+/* ==========================================================================
+   VISUAL GAME PHASE
    ========================================================================== */
 
 export type GamePhase =
@@ -49,8 +77,15 @@ export type GamePhase =
   | "dealer-turn"
   | "settling";
 
+
+/* ==========================================================================
+   RENDER STATE
+   ========================================================================== */
+
 export type GameVisualState = {
   phase: GamePhase;
+
+  introComplete: boolean;
 
   cameraX: number;
   cameraY: number;
@@ -58,7 +93,6 @@ export type GameVisualState = {
 
   pointerX: number;
   pointerY: number;
-
   pointerInside: boolean;
 
   time: number;
@@ -68,95 +102,253 @@ export type GameVisualState = {
   isFocused: boolean;
 
   interactionLocked: boolean;
+
+  casino: TableVisualState;
+
+  blackjack: {
+    phase: RoundPhase;
+    roundNumber: number;
+    activeSeat: number;
+    activeHandIndex: number;
+    dealerHoleCardRevealed: boolean;
+    dealerTurnCompleted: boolean;
+    roundLocked: boolean;
+    settlements: Blackjack["settlements"];
+  };
 };
+
+
+/* ==========================================================================
+   OPTIONS
+   ========================================================================== */
 
 export type GameOptions = {
   logicalWidth?: number;
   logicalHeight?: number;
+
   maxDpr?: number;
   pixelRatio?: number;
+
   reducedMotion?: boolean;
+
+  blackjack?: ConstructorParameters<
+    typeof Blackjack
+  >[0];
 };
 
+
+/* ==========================================================================
+   PUBLIC GAME EVENT
+   ========================================================================== */
+
+export type GameActionEventDetail = {
+  action: GameAction;
+  result: ActionResult;
+  playerId: string;
+};
+
+
+/* ==========================================================================
+   STARTUP ERROR
+   ========================================================================== */
+
+export class GameInitializationError
+  extends Error {
+
+  readonly stage: string;
+
+  readonly cause: unknown;
+
+  constructor(
+    stage: string,
+    cause: unknown
+  ) {
+    const message =
+      cause instanceof Error
+        ? cause.message
+        : String(cause);
+
+    super(
+      `[BLACKJACK INIT] ${stage}: ${message}`
+    );
+
+    this.name =
+      "GameInitializationError";
+
+    this.stage =
+      stage;
+
+    this.cause =
+      cause;
+  }
+}
+
+
+/* ==========================================================================
+   GAME CLASS
+   ========================================================================== */
+
 export class Game {
-  /* ------------------------------------------------------------------------
+
+  /* ========================================================================
      CORE
-     ------------------------------------------------------------------------ */
+     ======================================================================== */
 
   readonly canvas: HTMLCanvasElement;
 
   readonly renderer: Renderer;
+
   readonly animation: Animation;
+
   readonly input: Input;
 
-  readonly options: Required<GameOptions>;
+  readonly blackjack: Blackjack;
+
+  readonly options: Required<
+    Omit<
+      GameOptions,
+      "blackjack"
+    >
+  > & {
+    blackjack?: GameOptions["blackjack"];
+  };
 
   state: GameVisualState;
 
+
+  /* ========================================================================
+     FRAME LOOP
+     ======================================================================== */
+
   private animationFrame = 0;
+
   private lastTime = 0;
 
   private running = false;
+
   private destroyed = false;
 
-  private resizeObserver: ResizeObserver | null = null;
 
-  /* ------------------------------------------------------------------------
-     VISUAL / ATMOSPHERE
-     ------------------------------------------------------------------------ */
+  /* ========================================================================
+     RESIZE
+     ======================================================================== */
+
+  private resizeObserver:
+    ResizeObserver | null =
+    null;
+
+
+  /* ========================================================================
+     ATMOSPHERE
+     ======================================================================== */
 
   private ambientPhase = 0;
+
   private breathingPhase = 0;
 
+
+  /* ========================================================================
+     CAMERA
+     ======================================================================== */
+
   private cameraTargetX = 0;
+
   private cameraTargetY = 0;
+
   private cameraTargetZoom = 1;
 
   private cameraVelocityX = 0;
+
   private cameraVelocityY = 0;
+
+
+  /* ========================================================================
+     INTRO
+     ======================================================================== */
 
   private introProgress = 0;
 
-  /* ------------------------------------------------------------------------
-     EVENTS
 
-     Game owns ONLY the events that represent game-level state.
+  /* ========================================================================
+     ENGINE SUBSCRIPTION CLEANUP
+     ======================================================================== */
 
-     Input.ts owns interaction events such as:
-       pointermove
-       pointerdown
-       pointerup
-       wheel
-       touch
-       keyboard action mapping
+  private blackjackUnsubscribers:
+    Array<() => void> =
+    [];
 
-     We still observe canvas pointerenter / pointerleave here because
-     those are purely visual state indicators for the renderer.
-     ------------------------------------------------------------------------ */
 
-  private boundResize = () => {
-    this.resize();
-  };
+  /* ========================================================================
+     DOM EVENT HANDLERS
+     ======================================================================== */
 
-  private boundPointerEnter = () => {
-    this.state.pointerInside = true;
-  };
+  private boundResize =
+    () => {
+      this.resize();
+    };
 
-  private boundPointerLeave = () => {
-    this.state.pointerInside = false;
-  };
 
-  private boundFocus = () => {
-    this.state.isFocused = true;
-  };
+  private boundPointerEnter =
+    () => {
+      if (
+        this.destroyed
+      ) {
+        return;
+      }
 
-  private boundBlur = () => {
-    this.state.isFocused = false;
-  };
+      this.state.pointerInside =
+        true;
+    };
 
-  private boundKeyDown = (event: KeyboardEvent) => {
-    this.handleKeyDown(event);
-  };
+
+  private boundPointerLeave =
+    () => {
+      if (
+        this.destroyed
+      ) {
+        return;
+      }
+
+      this.state.pointerInside =
+        false;
+    };
+
+
+  private boundFocus =
+    () => {
+      if (
+        this.destroyed
+      ) {
+        return;
+      }
+
+      this.state.isFocused =
+        true;
+    };
+
+
+  private boundBlur =
+    () => {
+      if (
+        this.destroyed
+      ) {
+        return;
+      }
+
+      this.state.isFocused =
+        false;
+    };
+
+
+  private boundKeyDown =
+    (
+      event: KeyboardEvent
+    ) => {
+      this.handleKeyDown(
+        event
+      );
+    };
+
 
   /* ========================================================================
      CONSTRUCTOR
@@ -166,111 +358,383 @@ export class Game {
     canvas: HTMLCanvasElement,
     options: GameOptions = {}
   ) {
-    this.canvas = canvas;
+
+    if (
+      !canvas
+    ) {
+      throw new GameInitializationError(
+        "canvas",
+        new Error(
+          "Canvas element was not provided."
+        )
+      );
+    }
+
+
+    this.canvas =
+      canvas;
+
+
+    /* ----------------------------------------------------------------------
+       REDUCED MOTION
+       ---------------------------------------------------------------------- */
+
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function"
+        ? window.matchMedia(
+            "(prefers-reduced-motion: reduce)"
+          ).matches
+        : false;
+
+
+    /* ----------------------------------------------------------------------
+       OPTIONS
+       ---------------------------------------------------------------------- */
 
     this.options = {
       logicalWidth:
-        options.logicalWidth ?? 960,
+        Number.isFinite(
+          options.logicalWidth
+        )
+          ? Math.max(
+              1,
+              options.logicalWidth ??
+              960
+            )
+          : 960,
 
       logicalHeight:
-        options.logicalHeight ?? 540,
+        Number.isFinite(
+          options.logicalHeight
+        )
+          ? Math.max(
+              1,
+              options.logicalHeight ??
+              540
+            )
+          : 540,
 
       maxDpr:
-        options.maxDpr ?? 2,
+        Number.isFinite(
+          options.maxDpr
+        )
+          ? Math.max(
+              1,
+              options.maxDpr ??
+              2
+            )
+          : 2,
 
       pixelRatio:
-        options.pixelRatio ?? 1,
+        Number.isFinite(
+          options.pixelRatio
+        )
+          ? Math.max(
+              0.5,
+              options.pixelRatio ??
+              1
+            )
+          : 1,
 
       reducedMotion:
         options.reducedMotion ??
-        window.matchMedia?.(
-          "(prefers-reduced-motion: reduce)"
-        ).matches ??
-        false,
+        prefersReducedMotion,
+
+      blackjack:
+        options.blackjack,
     };
 
-    /* ----------------------------------------------------------------------
-       INITIAL STATE
-       ---------------------------------------------------------------------- */
-
-    this.state = {
-      phase: "loading",
-
-      cameraX: 0,
-      cameraY: 0,
-      cameraZoom: 1,
-
-      pointerX: 0,
-      pointerY: 0,
-
-      pointerInside: false,
-
-      time: 0,
-      delta: 0,
-      frame: 0,
-
-      isFocused: document.hasFocus(),
-
-      interactionLocked: true,
-    };
 
     /* ----------------------------------------------------------------------
        CANVAS
        ---------------------------------------------------------------------- */
 
-    this.prepareCanvas();
+    this.runInitializationStage(
+      "canvas preparation",
+      () => {
+        this.prepareCanvas();
+      }
+    );
+
 
     /* ----------------------------------------------------------------------
-       ENGINE SERVICES
+       BLACKJACK ENGINE
        ---------------------------------------------------------------------- */
 
-    this.renderer = new Renderer(this.canvas);
+    this.blackjack =
+      this.runInitializationStage(
+        "blackjack engine",
+        () =>
+          new Blackjack(
+            this.options.blackjack
+          )
+      );
 
-    this.animation = new Animation();
-
-    this.input = new Input(this.canvas);
 
     /* ----------------------------------------------------------------------
-       EVENTS
+       INITIAL ENGINE SNAPSHOT
        ---------------------------------------------------------------------- */
 
-    this.bindEvents();
+    const casino =
+      this.runInitializationStage(
+        "blackjack visual state",
+        () =>
+          this.blackjack.getVisualState()
+      );
+
+    const engineState =
+      this.runInitializationStage(
+        "blackjack state",
+        () =>
+          this.blackjack.getState()
+      );
+
+
+    /* ----------------------------------------------------------------------
+       INITIAL VISUAL STATE
+       ---------------------------------------------------------------------- */
+
+    this.state = {
+      phase:
+        "loading",
+
+      introComplete:
+        false,
+
+      cameraX:
+        0,
+
+      cameraY:
+        0,
+
+      cameraZoom:
+        1,
+
+      pointerX:
+        0,
+
+      pointerY:
+        0,
+
+      pointerInside:
+        false,
+
+      time:
+        0,
+
+      delta:
+        0,
+
+      frame:
+        0,
+
+      isFocused:
+        typeof document !== "undefined"
+          ? document.hasFocus()
+          : true,
+
+      interactionLocked:
+        true,
+
+      casino,
+
+      blackjack: {
+        phase:
+          engineState.phase,
+
+        roundNumber:
+          engineState.roundNumber,
+
+        activeSeat:
+          engineState.activeSeat,
+
+        activeHandIndex:
+          engineState.activeHandIndex,
+
+        dealerHoleCardRevealed:
+          engineState.dealerHoleCardRevealed,
+
+        dealerTurnCompleted:
+          engineState.dealerTurnCompleted,
+
+        roundLocked:
+          engineState.roundLocked,
+
+        settlements:
+          [
+            ...engineState.settlements,
+          ],
+      },
+    };
+
+
+    /* ----------------------------------------------------------------------
+       VISUAL SERVICES
+       ---------------------------------------------------------------------- */
+
+    this.renderer =
+      this.runInitializationStage(
+        "renderer",
+        () =>
+          new Renderer(
+            this.canvas
+          )
+      );
+
+    this.animation =
+      this.runInitializationStage(
+        "animation",
+        () =>
+          new Animation()
+      );
+
+    this.input =
+      this.runInitializationStage(
+        "input",
+        () =>
+          new Input(
+            this.canvas
+          )
+      );
+
+
+    /* ----------------------------------------------------------------------
+       ENGINE EVENTS
+       ---------------------------------------------------------------------- */
+
+    this.runInitializationStage(
+      "blackjack event bindings",
+      () => {
+        this.bindBlackjackEvents();
+      }
+    );
+
+
+    /* ----------------------------------------------------------------------
+       DOM EVENTS
+       ---------------------------------------------------------------------- */
+
+    this.runInitializationStage(
+      "DOM event bindings",
+      () => {
+        this.bindEvents();
+      }
+    );
+
 
     /* ----------------------------------------------------------------------
        INITIAL SIZE
        ---------------------------------------------------------------------- */
 
-    this.resize();
+    this.runInitializationStage(
+      "initial resize",
+      () => {
+        this.resize();
+      }
+    );
+
 
     /* ----------------------------------------------------------------------
-       INTRO
+       INITIAL SYNC
        ---------------------------------------------------------------------- */
 
-    this.startIntro();
+    this.runInitializationStage(
+      "initial state synchronization",
+      () => {
+        this.syncBlackjackState();
+      }
+    );
+
 
     /* ----------------------------------------------------------------------
        START LOOP
        ---------------------------------------------------------------------- */
 
-    this.running = true;
+    this.running =
+      true;
 
     this.animationFrame =
-      requestAnimationFrame(this.loop);
-  }
+      requestAnimationFrame(
+        this.loop
+      );
 
-  /* ========================================================================
-     CANVAS SETUP
-     ======================================================================== */
 
-  private prepareCanvas() {
-    this.canvas.style.display = "block";
-    this.canvas.style.width = "100%";
-    this.canvas.style.height = "100%";
+    /* ----------------------------------------------------------------------
+       INTRO
+       ---------------------------------------------------------------------- */
 
     /*
-     * Pixel-art / pixel-clean rendering.
+     * IMPORTANT:
+     * The engine remains "waiting" until the entire Game object exists.
+     *
+     * completeIntro() performs the explicit transition to "betting".
      */
-    this.canvas.style.imageRendering = "pixelated";
+    this.startIntro();
+  }
+
+
+  /* ==========================================================================
+     INITIALIZATION HELPER
+     ========================================================================== */
+
+  private runInitializationStage<T>(
+    stage: string,
+    callback: () => T
+  ): T {
+
+    try {
+      return callback();
+    } catch (error) {
+
+      console.error(
+        `[BLACKJACK INIT FAILED] ${stage}`,
+        error
+      );
+
+      if (
+        error instanceof GameInitializationError
+      ) {
+        throw error;
+      }
+
+      throw new GameInitializationError(
+        stage,
+        error
+      );
+    }
+  }
+
+
+  /* ==========================================================================
+     CANVAS SETUP
+     ========================================================================== */
+
+  private prepareCanvas(): void {
+
+    if (
+      !(this.canvas instanceof HTMLCanvasElement)
+    ) {
+      throw new Error(
+        "Provided element is not an HTMLCanvasElement."
+      );
+    }
+
+
+    this.canvas.style.display =
+      "block";
+
+    this.canvas.style.width =
+      "100%";
+
+    this.canvas.style.height =
+      "100%";
+
+    this.canvas.style.imageRendering =
+      "pixelated";
+
+    this.canvas.style.touchAction =
+      "none";
 
     this.canvas.setAttribute(
       "role",
@@ -279,73 +743,487 @@ export class Game {
 
     this.canvas.setAttribute(
       "aria-label",
-      "Blackjack 21 casino table"
+      "Blackjack 21 first-person casino table"
     );
-
-    /*
-     * Prevent browser gestures / scrolling
-     * while interacting with the table.
-     */
-    this.canvas.style.touchAction = "none";
   }
 
-  /* ========================================================================
-     EVENT BINDING
-     ======================================================================== */
 
-  private bindEvents() {
-    window.addEventListener(
-      "resize",
-      this.boundResize,
-      { passive: true }
-    );
+  /* ==========================================================================
+     BLACKJACK EVENTS
+     ========================================================================== */
 
-    window.addEventListener(
-      "keydown",
-      this.boundKeyDown
-    );
+  private bindBlackjackEvents(): void {
 
-    window.addEventListener(
-      "focus",
-      this.boundFocus
-    );
+    const subscribe =
+      (
+        name:
+          Parameters<
+            Blackjack["on"]
+          >[0]
+      ): void => {
 
-    window.addEventListener(
-      "blur",
-      this.boundBlur
+        const unsubscribe =
+          this.blackjack.on(
+            name,
+            (
+              event
+            ) => {
+              this.handleBlackjackEvent(
+                event
+              );
+            }
+          );
+
+        this.blackjackUnsubscribers.push(
+          unsubscribe
+        );
+      };
+
+
+    subscribe("round:start");
+    subscribe("round:phase");
+    subscribe("bet:change");
+    subscribe("cards:deal");
+    subscribe("card:draw");
+    subscribe("card:flip");
+    subscribe("player:turn");
+    subscribe("player:action");
+    subscribe("dealer:turn");
+    subscribe("dealer:action");
+    subscribe("round:settle");
+    subscribe("round:complete");
+    subscribe("error");
+  }
+
+
+  private handleBlackjackEvent(
+    event: BlackjackEvent
+  ): void {
+
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
+
+
+    try {
+
+      this.syncBlackjackState();
+
+
+      switch (
+        event.name
+      ) {
+
+        case "card:draw":
+          this.onCardDrawEvent(
+            event
+          );
+          break;
+
+        case "card:flip":
+          this.onCardFlipEvent(
+            event
+          );
+          break;
+
+        case "player:action":
+          this.onPlayerActionEvent(
+            event
+          );
+          break;
+
+        case "dealer:action":
+          this.onDealerActionEvent(
+            event
+          );
+          break;
+
+        case "round:settle":
+          this.onSettlementEvent(
+            event
+          );
+          break;
+
+        case "round:complete":
+          this.onRoundCompleteEvent(
+            event
+          );
+          break;
+
+        default:
+          break;
+      }
+
+
+      if (
+        typeof window !==
+        "undefined"
+      ) {
+
+        window.dispatchEvent(
+          new CustomEvent(
+            `blackjack:engine:${event.name}`,
+            {
+              detail:
+                event.detail,
+            }
+          )
+        );
+      }
+
+    } catch (error) {
+
+      console.error(
+        "[BLACKJACK EVENT ERROR]",
+        event.name,
+        error
+      );
+    }
+  }
+
+
+  /* ==========================================================================
+     ENGINE → VISUAL STATE
+     ========================================================================== */
+
+  private syncBlackjackState(): void {
+
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
+
+
+    const casino =
+      this.blackjack.getVisualState();
+
+    const engineState =
+      this.blackjack.getState();
+
+
+    this.state.casino =
+      casino;
+
+
+    this.state.blackjack = {
+      phase:
+        engineState.phase,
+
+      roundNumber:
+        engineState.roundNumber,
+
+      activeSeat:
+        engineState.activeSeat,
+
+      activeHandIndex:
+        engineState.activeHandIndex,
+
+      dealerHoleCardRevealed:
+        engineState.dealerHoleCardRevealed,
+
+      dealerTurnCompleted:
+        engineState.dealerTurnCompleted,
+
+      roundLocked:
+        engineState.roundLocked,
+
+      settlements:
+        [
+          ...engineState.settlements,
+        ],
+    };
+
+
+    this.state.phase =
+      this.mapRoundPhase(
+        engineState.phase
+      );
+
+
+    this.state.interactionLocked =
+      this.isInteractionLocked(
+        engineState.phase
+      );
+
+
+    if (
+      !this.state.introComplete
+    ) {
+
+      this.state.phase =
+        "loading";
+
+      this.state.interactionLocked =
+        true;
+    }
+  }
+
+
+  /* ==========================================================================
+     PHASE MAPPING
+     ========================================================================== */
+
+  private mapRoundPhase(
+    phase: RoundPhase
+  ): GamePhase {
+
+    switch (
+      phase
+    ) {
+
+      case "waiting":
+      case "betting":
+      case "complete":
+        return "betting";
+
+      case "initial-deal":
+      case "insurance":
+      case "player-turn":
+        return "player-turn";
+
+      case "dealer-turn":
+        return "dealer-turn";
+
+      case "settlement":
+        return "settling";
+
+      default:
+        return "betting";
+    }
+  }
+
+
+  /* ==========================================================================
+     INTERACTION LOCK
+     ========================================================================== */
+
+  private isInteractionLocked(
+    phase: RoundPhase
+  ): boolean {
+
+    switch (
+      phase
+    ) {
+
+      case "initial-deal":
+      case "dealer-turn":
+      case "settlement":
+        return true;
+
+      case "waiting":
+      case "betting":
+      case "insurance":
+      case "player-turn":
+      case "complete":
+      default:
+        return false;
+    }
+  }
+
+
+  /* ==========================================================================
+     CARD / VISUAL EVENT HOOKS
+     ========================================================================== */
+
+  private onCardDrawEvent(
+    event: BlackjackEvent
+  ): void {
+
+    const card =
+      event.detail.card;
+
+
+    if (
+      !card ||
+      typeof card !==
+      "object"
+    ) {
+      return;
+    }
+
+
+    this.dispatchVisualEvent(
+      "blackjack:visual:card-draw",
+      {
+        card,
+      }
     );
+  }
+
+
+  private onCardFlipEvent(
+    event: BlackjackEvent
+  ): void {
+
+    this.dispatchVisualEvent(
+      "blackjack:visual:card-flip",
+      {
+        card:
+          event.detail.card,
+      }
+    );
+  }
+
+
+  private onPlayerActionEvent(
+    event: BlackjackEvent
+  ): void {
+
+    this.dispatchVisualEvent(
+      "blackjack:visual:player-action",
+      event.detail
+    );
+  }
+
+
+  private onDealerActionEvent(
+    event: BlackjackEvent
+  ): void {
+
+    this.dispatchVisualEvent(
+      "blackjack:visual:dealer-action",
+      event.detail
+    );
+  }
+
+
+  private onSettlementEvent(
+    event: BlackjackEvent
+  ): void {
+
+    this.dispatchVisualEvent(
+      "blackjack:visual:settlement",
+      event.detail
+    );
+  }
+
+
+  private onRoundCompleteEvent(
+    event: BlackjackEvent
+  ): void {
 
     /*
-     * These pointer events are intentionally limited
-     * to visual state tracking.
+     * Finish event is emitted while Blackjack phase is "complete".
      *
-     * Input.ts remains the owner of the actual
-     * pointer interaction pipeline.
+     * Move back to betting explicitly.
      */
+    if (
+      this.blackjack.phase ===
+      "complete"
+    ) {
+
+      this.blackjack.setRoundState(
+        "betting"
+      );
+    }
+
+
+    this.syncBlackjackState();
+
+
+    this.dispatchVisualEvent(
+      "blackjack:visual:round-complete",
+      event.detail
+    );
+  }
+
+
+  private dispatchVisualEvent(
+    name: string,
+    detail: Record<string, unknown>
+  ): void {
+
+    if (
+      typeof window ===
+      "undefined"
+    ) {
+      return;
+    }
+
+
+    window.dispatchEvent(
+      new CustomEvent(
+        name,
+        {
+          detail,
+        }
+      )
+    );
+  }
+
+
+  /* ==========================================================================
+     DOM EVENTS
+     ========================================================================== */
+
+  private bindEvents(): void {
+
+    if (
+      typeof window !==
+      "undefined"
+    ) {
+
+      window.addEventListener(
+        "resize",
+        this.boundResize,
+        {
+          passive: true,
+        }
+      );
+
+
+      window.addEventListener(
+        "keydown",
+        this.boundKeyDown
+      );
+
+
+      window.addEventListener(
+        "focus",
+        this.boundFocus
+      );
+
+
+      window.addEventListener(
+        "blur",
+        this.boundBlur
+      );
+    }
+
+
     this.canvas.addEventListener(
       "pointerenter",
       this.boundPointerEnter,
-      { passive: true }
+      {
+        passive: true,
+      }
     );
+
 
     this.canvas.addEventListener(
       "pointerleave",
       this.boundPointerLeave,
-      { passive: true }
+      {
+        passive: true,
+      }
     );
 
-    /*
-     * ResizeObserver keeps the render surface correct
-     * if the containing element changes independently
-     * of window resize.
-     */
+
     if (
-      typeof ResizeObserver !== "undefined"
+      typeof ResizeObserver !==
+      "undefined"
     ) {
+
       this.resizeObserver =
-        new ResizeObserver(() => {
-          this.resize();
-        });
+        new ResizeObserver(
+          () => {
+            this.resize();
+          }
+        );
+
 
       this.resizeObserver.observe(
         this.canvas
@@ -353,311 +1231,481 @@ export class Game {
     }
   }
 
-  /* ========================================================================
-     EVENT UNBINDING
-     ======================================================================== */
 
-  private unbindEvents() {
-    window.removeEventListener(
-      "resize",
-      this.boundResize
-    );
+  /* ==========================================================================
+     DOM EVENT CLEANUP
+     ========================================================================== */
 
-    window.removeEventListener(
-      "keydown",
-      this.boundKeyDown
-    );
+  private unbindEvents(): void {
 
-    window.removeEventListener(
-      "focus",
-      this.boundFocus
-    );
+    if (
+      typeof window !==
+      "undefined"
+    ) {
 
-    window.removeEventListener(
-      "blur",
-      this.boundBlur
-    );
+      window.removeEventListener(
+        "resize",
+        this.boundResize
+      );
+
+
+      window.removeEventListener(
+        "keydown",
+        this.boundKeyDown
+      );
+
+
+      window.removeEventListener(
+        "focus",
+        this.boundFocus
+      );
+
+
+      window.removeEventListener(
+        "blur",
+        this.boundBlur
+      );
+    }
+
 
     this.canvas.removeEventListener(
       "pointerenter",
       this.boundPointerEnter
     );
 
+
     this.canvas.removeEventListener(
       "pointerleave",
       this.boundPointerLeave
     );
 
+
     this.resizeObserver?.disconnect();
 
-    this.resizeObserver = null;
+    this.resizeObserver =
+      null;
   }
 
-  /* ========================================================================
-     RESIZE
-     ======================================================================== */
 
-  resize() {
-    if (this.destroyed) {
+  /* ==========================================================================
+     RESIZE
+     ========================================================================== */
+
+  resize(): void {
+
+    if (
+      this.destroyed
+    ) {
       return;
     }
+
 
     const rect =
       this.canvas.getBoundingClientRect();
 
-    const width = Math.max(
-      1,
-      Math.floor(rect.width)
-    );
 
-    const height = Math.max(
-      1,
-      Math.floor(rect.height)
-    );
+    const width =
+      Math.max(
+        1,
+        Math.floor(
+          rect.width
+        )
+      );
 
-    /*
-     * Renderer controls the actual backing buffer
-     * and DPR-aware canvas dimensions.
-     */
+
+    const height =
+      Math.max(
+        1,
+        Math.floor(
+          rect.height
+        )
+      );
+
+
     this.renderer.resize(
       width,
       height
     );
 
-    /*
-     * Update camera framing.
-     */
+
     this.updateCameraViewport(
       width,
       height
     );
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
      CAMERA VIEWPORT
-     ======================================================================== */
+     ========================================================================== */
 
   private updateCameraViewport(
     width: number,
     height: number
-  ) {
+  ): void {
+
     const aspect =
       width /
-      Math.max(height, 1);
+      Math.max(
+        height,
+        1
+      );
 
-    /*
-     * Comfortable casino-table framing.
 
-       Wide:
-         natural zoom
+    if (
+      aspect >= 1.65
+    ) {
 
-       Medium:
-         slightly closer
+      this.cameraTargetZoom =
+        1;
 
-       Narrow:
-         slightly closer again
-     */
-    if (aspect >= 1.65) {
-      this.cameraTargetZoom = 1;
-    } else if (aspect >= 1.35) {
-      this.cameraTargetZoom = 1.04;
+    } else if (
+      aspect >= 1.35
+    ) {
+
+      this.cameraTargetZoom =
+        1.02;
+
     } else {
-      this.cameraTargetZoom = 1.1;
+
+      this.cameraTargetZoom =
+        1.045;
     }
 
-    /*
-     * Keep focus a little above center.
-     */
-    this.cameraTargetX = 0;
+
+    this.cameraTargetX =
+      0;
+
 
     this.cameraTargetY =
       height < 650
-        ? -4
-        : -2;
+        ? -3
+        : -1.5;
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
      INTRO
-     ======================================================================== */
+     ========================================================================== */
 
-  private startIntro() {
-    if (this.options.reducedMotion) {
-      this.introProgress = 1;
+  private startIntro(): void {
 
-      this.state.phase = "idle";
+    if (
+      this.options.reducedMotion
+    ) {
 
-      this.state.interactionLocked = false;
+      this.introProgress =
+        1;
+
+      this.completeIntro();
 
       return;
     }
 
-    this.introProgress = 0;
 
-    const duration = 900;
+    this.introProgress =
+      0;
+
+    this.state.introComplete =
+      false;
+
+
+    const duration =
+      850;
+
 
     const startedAt =
-      performance.now();
+      typeof performance !==
+      "undefined"
+        ? performance.now()
+        : Date.now();
 
-    const introTick = (now: number) => {
-      if (this.destroyed) {
-        return;
-      }
 
-      const elapsed =
-        now - startedAt;
+    const introTick =
+      (
+        now: number
+      ): void => {
 
-      this.introProgress =
-        Math.min(
-          elapsed / duration,
+        if (
+          this.destroyed
+        ) {
+          return;
+        }
+
+
+        this.introProgress =
+          Math.min(
+            (
+              now -
+              startedAt
+            ) /
+            duration,
+            1
+          );
+
+
+        if (
+          this.introProgress <
           1
-        );
+        ) {
 
-      if (
-        this.introProgress < 1
-      ) {
-        requestAnimationFrame(
-          introTick
-        );
+          requestAnimationFrame(
+            introTick
+          );
 
-        return;
-      }
+          return;
+        }
 
-      this.state.phase = "idle";
 
-      this.state.interactionLocked = false;
-    };
+        this.completeIntro();
+      };
+
 
     requestAnimationFrame(
       introTick
     );
   }
 
-  /* ========================================================================
-     MAIN LOOP
-     ======================================================================== */
 
-  private loop = (time: number) => {
-    if (this.destroyed) {
+  private completeIntro(): void {
+
+    if (
+      this.destroyed
+    ) {
       return;
     }
 
+
+    this.introProgress =
+      1;
+
+
+    this.state.introComplete =
+      true;
+
+
     /*
-     * Schedule the next frame first.
+     * FIRST moment where Game is fully initialized.
+     *
+     * Only now may the engine transition from waiting to betting.
      */
+    if (
+      this.blackjack.phase ===
+      "waiting"
+    ) {
+
+      this.blackjack.setRoundState(
+        "betting"
+      );
+    }
+
+
+    if (
+      this.blackjack.phase ===
+      "complete"
+    ) {
+
+      this.blackjack.setRoundState(
+        "betting"
+      );
+    }
+
+
+    this.syncBlackjackState();
+
+
+    this.state.phase =
+      this.mapRoundPhase(
+        this.blackjack.phase
+      );
+
+
+    this.state.interactionLocked =
+      this.isInteractionLocked(
+        this.blackjack.phase
+      );
+  }
+
+
+  /* ==========================================================================
+     MAIN LOOP
+     ========================================================================== */
+
+  private loop = (
+    time: number
+  ): void => {
+
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
+
+
     this.animationFrame =
       requestAnimationFrame(
         this.loop
       );
 
-    if (!this.running) {
+
+    if (
+      !this.running
+    ) {
       return;
     }
 
-    /*
-     * First-frame protection.
-     */
-    if (!this.lastTime) {
-      this.lastTime = time;
 
-      /*
-       * Still render the initial frame.
-       */
-      this.update(0);
+    if (
+      this.lastTime === 0
+    ) {
+
+      this.lastTime =
+        time;
+
+      this.state.delta =
+        0;
+
+      this.update(
+        0
+      );
+
       this.render();
 
       return;
     }
 
+
     let delta =
-      (time - this.lastTime) /
+      (
+        time -
+        this.lastTime
+      ) /
       1000;
 
-    this.lastTime = time;
 
-    /*
-     * Prevent giant time jumps after:
-     * - tab switching
-     * - devtools
-     * - laptop sleep
-     * - browser throttling
-     */
+    this.lastTime =
+      time;
+
+
     delta =
       Math.min(
-        Math.max(delta, 0),
+        Math.max(
+          delta,
+          0
+        ),
         0.05
       );
 
-    this.state.delta = delta;
 
-    this.state.time += delta;
+    this.state.delta =
+      delta;
 
-    this.state.frame += 1;
 
-    this.update(delta);
+    this.state.time +=
+      delta;
+
+
+    this.state.frame +=
+      1;
+
+
+    this.update(
+      delta
+    );
+
 
     this.render();
   };
 
-  /* ========================================================================
+
+  /* ==========================================================================
      UPDATE
-     ======================================================================== */
+     ========================================================================== */
 
-  private update(delta: number) {
-    this.updateAmbient(delta);
+  private update(
+    delta: number
+  ): void {
 
-    this.updateCamera(delta);
+    this.updateAmbient(
+      delta
+    );
 
-    this.updateAnimation(delta);
+
+    this.updateCamera(
+      delta
+    );
+
+
+    this.updateAnimation(
+      delta
+    );
+
 
     this.updateInput();
 
+
     /*
-     * Renderer can maintain any internal animation
-     * or interpolation it needs.
+     * Pure state mirror.
      */
+    this.syncBlackjackState();
+
+
     this.renderer.update?.(
       delta,
       this.state
     );
   }
 
-  /* ========================================================================
-     AMBIENT MOTION
-     ======================================================================== */
 
-  private updateAmbient(delta: number) {
-    if (this.options.reducedMotion) {
+  /* ==========================================================================
+     AMBIENT MOTION
+     ========================================================================== */
+
+  private updateAmbient(
+    delta: number
+  ): void {
+
+    if (
+      this.options.reducedMotion
+    ) {
       return;
     }
 
-    /*
-     * Slow atmosphere movement.
-     *
-     * The movement is intentionally subtle:
-     * a casino table should feel alive,
-     * not like a screensaver.
-     */
+
     this.ambientPhase +=
-      delta * 0.18;
+      delta *
+      0.18;
+
 
     this.breathingPhase +=
-      delta * 0.85;
+      delta *
+      0.85;
   }
 
-  /* ========================================================================
-     CAMERA UPDATE
-     ======================================================================== */
 
-  private updateCamera(delta: number) {
-    /*
-     * Stable frame-rate independent smoothing.
-     */
+  /* ==========================================================================
+     CAMERA UPDATE
+     ========================================================================== */
+
+  private updateCamera(
+    delta: number
+  ): void {
+
+    if (
+      delta <=
+      0
+    ) {
+      return;
+    }
+
+
     const smooth =
       1 -
       Math.pow(
         0.001,
         delta
       );
+
 
     const motion =
       this.options.reducedMotion
@@ -666,23 +1714,26 @@ export class Game {
             this.breathingPhase
           );
 
+
     const desiredX =
       this.cameraTargetX +
-      motion * 0.16;
+      motion *
+      0.08;
+
 
     const desiredY =
       this.cameraTargetY +
-      motion * 0.08;
+      motion *
+      0.04;
 
-    /*
-     * Spring-ish camera movement.
-     */
+
     this.cameraVelocityX +=
       (
         desiredX -
         this.state.cameraX
       ) *
       0.035;
+
 
     this.cameraVelocityY +=
       (
@@ -691,19 +1742,24 @@ export class Game {
       ) *
       0.035;
 
-    /*
-     * Damping.
-     */
-    this.cameraVelocityX *= 0.89;
-    this.cameraVelocityY *= 0.89;
+
+    this.cameraVelocityX *=
+      0.89;
+
+
+    this.cameraVelocityY *=
+      0.89;
+
 
     this.state.cameraX +=
       this.cameraVelocityX *
       smooth;
 
+
     this.state.cameraY +=
       this.cameraVelocityY *
       smooth;
+
 
     this.state.cameraZoom +=
       (
@@ -714,77 +1770,53 @@ export class Game {
       0.45;
   }
 
-  /* ========================================================================
-     ANIMATION SERVICE
-     ======================================================================== */
+
+  /* ==========================================================================
+     ANIMATION
+     ========================================================================== */
 
   private updateAnimation(
     delta: number
-  ) {
-    if (delta <= 0) {
+  ): void {
+
+    if (
+      delta <=
+      0
+    ) {
       return;
     }
+
 
     this.animation.update(
       delta
     );
   }
 
-  /* ========================================================================
-     INPUT SERVICE
-     ======================================================================== */
 
-  private updateInput() {
-    /*
-     * Input.ts owns:
-     * - pointer state
-     * - mouse buttons
-     * - touch state
-     * - drag state
-     * - wheel state
-     * - transient keyboard state
-     * - UI action mapping
-     *
-     * Its update() method clears one-frame
-     * transient values after they have been consumed.
-     */
+  /* ==========================================================================
+     INPUT
+     ========================================================================== */
+
+  private updateInput(): void {
     this.input.update();
-
-    /*
-     * Copy the normalized pointer position from Input
-     * into Game's visual state when available.
-     *
-     * We intentionally avoid depending on optional
-     * pointer forwarding methods.
-     */
-    const inputState =
-      this.input.state;
-
-    if (inputState) {
-      this.state.pointerX =
-        inputState.pointer.x;
-
-      this.state.pointerY =
-        inputState.pointer.y;
-    }
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
      KEYBOARD
-     ======================================================================== */
+     ========================================================================== */
 
   private handleKeyDown(
     event: KeyboardEvent
-  ) {
+  ): void {
+
     if (
-      this.state.interactionLocked
+      this.destroyed
     ) {
       return;
     }
 
-    /*
-     * Never hijack browser / OS shortcuts.
-     */
+
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -793,37 +1825,239 @@ export class Game {
       return;
     }
 
-    switch (
-      event.key.toLowerCase()
+
+    if (
+      event.repeat
     ) {
-      case "h":
-        this.emitGameAction(
-          "hit"
+      return;
+    }
+
+
+    const key =
+      event.key.toLowerCase();
+
+
+    if (
+      !this.state.introComplete
+    ) {
+
+      if (
+        key === " " ||
+        key === "enter"
+      ) {
+        event.preventDefault();
+      }
+
+      return;
+    }
+
+
+    /* ----------------------------------------------------------------------
+       BETTING
+       ---------------------------------------------------------------------- */
+
+    switch (
+      key
+    ) {
+
+      case "+":
+      case "=":
+
+        event.preventDefault();
+
+        this.increaseBet();
+
+        return;
+
+      case "-":
+      case "_":
+
+        event.preventDefault();
+
+        this.decreaseBet();
+
+        return;
+
+      case "c":
+
+        event.preventDefault();
+
+        this.clearBet();
+
+        return;
+
+      case "b":
+
+        event.preventDefault();
+
+        this.repeatBet();
+
+        return;
+
+      case "1":
+
+        event.preventDefault();
+
+        this.increaseBet(
+          5
         );
+
+        return;
+
+      case "2":
+
+        event.preventDefault();
+
+        this.increaseBet(
+          10
+        );
+
+        return;
+
+      case "3":
+
+        event.preventDefault();
+
+        this.increaseBet(
+          25
+        );
+
+        return;
+
+      case "4":
+
+        event.preventDefault();
+
+        this.increaseBet(
+          50
+        );
+
+        return;
+
+      case "5":
+
+        event.preventDefault();
+
+        this.increaseBet(
+          100
+        );
+
+        return;
+
+      case "6":
+
+        event.preventDefault();
+
+        this.increaseBet(
+          500
+        );
+
+        return;
+
+      default:
+        break;
+    }
+
+
+    /* ----------------------------------------------------------------------
+       DEAL
+       ---------------------------------------------------------------------- */
+
+    if (
+      key === " " ||
+      key === "enter"
+    ) {
+
+      event.preventDefault();
+
+
+      if (
+        this.blackjack.phase ===
+        "betting"
+      ) {
+        this.deal();
+      }
+
+
+      return;
+    }
+
+
+    /* ----------------------------------------------------------------------
+       PLAYER ACTIONS
+       ---------------------------------------------------------------------- */
+
+    switch (
+      key
+    ) {
+
+      case "h":
+
+        event.preventDefault();
+
+        this.hit();
+
         break;
 
       case "s":
-        this.emitGameAction(
-          "stand"
-        );
+
+        event.preventDefault();
+
+        this.stand();
+
         break;
 
       case "d":
-        this.emitGameAction(
-          "double"
-        );
+
+        event.preventDefault();
+
+        this.double();
+
         break;
 
       case "p":
-        this.emitGameAction(
-          "split"
-        );
+
+        event.preventDefault();
+
+        this.split();
+
+        break;
+
+      case "i":
+
+        event.preventDefault();
+
+        this.insurance();
+
+        break;
+
+      case "n":
+
+        event.preventDefault();
+
+        this.declineInsurance();
+
+        break;
+
+      case "r":
+
+        event.preventDefault();
+
+        this.surrender();
+
         break;
 
       case "escape":
-        this.emitGameAction(
-          "escape"
-        );
+
+        event.preventDefault();
+
+        if (
+          this.blackjack.phase ===
+          "insurance"
+        ) {
+          this.declineInsurance();
+        }
+
         break;
 
       default:
@@ -831,220 +2065,972 @@ export class Game {
     }
   }
 
-  /* ========================================================================
-     GAME ACTION BRIDGE
-     ======================================================================== */
 
-  emitGameAction(
-    action:
-      | "hit"
-      | "stand"
-      | "double"
-      | "split"
-      | "escape"
-  ) {
-    /*
-     * Temporary visual/game-shell bridge.
-     *
-     * Later this should become:
-     *
-     *   Input
-     *     ↓
-     *   Game
-     *     ↓
-     *   Blackjack
-     *     ↓
-     *   GameVisualState
-     *
-     * For now we preserve the visual shell behaviour.
-     */
+  /* ==========================================================================
+     HUMAN PLAYER
+     ========================================================================== */
 
-    switch (action) {
-      case "hit": {
-        if (
-          this.state.phase ===
-          "idle"
-        ) {
-          this.state.phase =
-            "player-turn";
-        }
+  getHumanPlayerId(): string {
+    return (
+      this.blackjack
+        .getHumanPlayer()
+        ?.id ??
+      ""
+    );
+  }
 
-        break;
-      }
 
-      case "stand": {
-        if (
-          this.state.phase ===
-            "idle" ||
-          this.state.phase ===
-            "player-turn"
-        ) {
-          this.state.phase =
-            "dealer-turn";
-        }
+  /* ==========================================================================
+     PLAYER ACTION DISPATCH
+     ========================================================================== */
 
-        break;
-      }
+  private performAction(
+    action: GameAction
+  ): ActionResult {
 
-      case "double": {
-        if (
-          this.state.phase ===
-          "idle"
-        ) {
-          this.state.phase =
-            "player-turn";
-        }
+    const playerId =
+      this.getHumanPlayerId();
 
-        break;
-      }
 
-      case "split": {
-        if (
-          this.state.phase ===
-          "idle"
-        ) {
-          this.state.phase =
-            "player-turn";
-        }
+    if (
+      !playerId
+    ) {
 
-        break;
-      }
+      return {
+        success:
+          false,
 
-      case "escape": {
-        this.state.phase = "idle";
+        action,
 
-        break;
-      }
-
-      default:
-        break;
+        reason:
+          "Human player not found.",
+      };
     }
 
-    /*
-     * Notify Astro / HUD / other UI systems.
-     */
+
+    if (
+      !this.state.introComplete &&
+      (
+        action === "deal" ||
+        action === "hit" ||
+        action === "stand" ||
+        action === "double" ||
+        action === "split" ||
+        action === "insurance" ||
+        action === "decline-insurance" ||
+        action === "surrender"
+      )
+    ) {
+
+      return {
+        success:
+          false,
+
+        action,
+
+        reason:
+          "Game introduction is still running.",
+      };
+    }
+
+
+    const result =
+      this.blackjack.execute(
+        playerId,
+        action
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      action,
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     DEAL
+     ========================================================================== */
+
+  deal(): ActionResult {
+
+    if (
+      !this.state.introComplete
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "deal",
+
+        reason:
+          "Game introduction is still running.",
+      };
+    }
+
+
+    if (
+      this.blackjack.phase ===
+      "waiting"
+    ) {
+
+      this.blackjack.setRoundState(
+        "betting"
+      );
+    }
+
+
+    if (
+      this.blackjack.phase ===
+      "complete"
+    ) {
+
+      this.blackjack.setRoundState(
+        "betting"
+      );
+    }
+
+
+    if (
+      this.blackjack.phase !==
+      "betting"
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "deal",
+
+        reason:
+          `Cannot deal during ${this.blackjack.phase} phase.`,
+      };
+    }
+
+
+    return this.performAction(
+      "deal"
+    );
+  }
+
+
+  /* ==========================================================================
+     HIT
+     ========================================================================== */
+
+  hit(): ActionResult {
+    return this.performAction(
+      "hit"
+    );
+  }
+
+
+  /* ==========================================================================
+     STAND
+     ========================================================================== */
+
+  stand(): ActionResult {
+    return this.performAction(
+      "stand"
+    );
+  }
+
+
+  /* ==========================================================================
+     DOUBLE
+     ========================================================================== */
+
+  double(): ActionResult {
+    return this.performAction(
+      "double"
+    );
+  }
+
+
+  /* ==========================================================================
+     SPLIT
+     ========================================================================== */
+
+  split(): ActionResult {
+    return this.performAction(
+      "split"
+    );
+  }
+
+
+  /* ==========================================================================
+     INSURANCE
+     ========================================================================== */
+
+  insurance(
+    amount?: number
+  ): ActionResult {
+
+    const playerId =
+      this.getHumanPlayerId();
+
+
+    if (
+      !playerId
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "insurance",
+
+        reason:
+          "Human player not found.",
+      };
+    }
+
+
+    if (
+      !this.state.introComplete
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "insurance",
+
+        reason:
+          "Game introduction is still running.",
+      };
+    }
+
+
+    if (
+      amount ===
+      undefined
+    ) {
+
+      return this.performAction(
+        "insurance"
+      );
+    }
+
+
+    const result =
+      this.blackjack.takeInsurance(
+        playerId,
+        amount
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      "insurance",
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     DECLINE INSURANCE
+     ========================================================================== */
+
+  declineInsurance(): ActionResult {
+
+    const playerId =
+      this.getHumanPlayerId();
+
+
+    if (
+      !playerId
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "decline-insurance",
+
+        reason:
+          "Human player not found.",
+      };
+    }
+
+
+    if (
+      !this.state.introComplete
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "decline-insurance",
+
+        reason:
+          "Game introduction is still running.",
+      };
+    }
+
+
+    const result =
+      this.blackjack.declineInsurance(
+        playerId
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      "decline-insurance",
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     SURRENDER
+     ========================================================================== */
+
+  surrender(): ActionResult {
+    return this.performAction(
+      "surrender"
+    );
+  }
+
+
+  /* ==========================================================================
+     BETTING — INCREASE
+     ========================================================================== */
+
+  increaseBet(
+    amount = 5
+  ): ActionResult {
+
+    const playerId =
+      this.getHumanPlayerId();
+
+
+    if (
+      !playerId
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "increase-bet",
+
+        reason:
+          "Human player not found.",
+      };
+    }
+
+
+    const result =
+      this.blackjack.increaseBet(
+        playerId,
+        amount
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      "increase-bet",
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     BETTING — DECREASE
+     ========================================================================== */
+
+  decreaseBet(
+    amount = 5
+  ): ActionResult {
+
+    const playerId =
+      this.getHumanPlayerId();
+
+
+    if (
+      !playerId
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "decrease-bet",
+
+        reason:
+          "Human player not found.",
+      };
+    }
+
+
+    const result =
+      this.blackjack.decreaseBet(
+        playerId,
+        amount
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      "decrease-bet",
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     BETTING — CLEAR
+     ========================================================================== */
+
+  clearBet(): ActionResult {
+
+    const playerId =
+      this.getHumanPlayerId();
+
+
+    if (
+      !playerId
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "clear-bet",
+
+        reason:
+          "Human player not found.",
+      };
+    }
+
+
+    const result =
+      this.blackjack.clearBet(
+        playerId
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      "clear-bet",
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     BETTING — REPEAT
+     ========================================================================== */
+
+  repeatBet(): ActionResult {
+
+    const playerId =
+      this.getHumanPlayerId();
+
+
+    if (
+      !playerId
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "repeat-bet",
+
+        reason:
+          "Human player not found.",
+      };
+    }
+
+
+    const result =
+      this.blackjack.execute(
+        playerId,
+        "repeat-bet"
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      "repeat-bet",
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     BETTING — SET
+     ========================================================================== */
+
+  setBet(
+    amount: number
+  ): ActionResult {
+
+    const playerId =
+      this.getHumanPlayerId();
+
+
+    if (
+      !playerId
+    ) {
+
+      return {
+        success:
+          false,
+
+        action:
+          "increase-bet",
+
+        reason:
+          "Human player not found.",
+      };
+    }
+
+
+    const result =
+      this.blackjack.setBet(
+        playerId,
+        amount
+      );
+
+
+    this.syncBlackjackState();
+
+
+    this.emitActionEvent(
+      "increase-bet",
+      result,
+      playerId
+    );
+
+
+    this.render();
+
+
+    return result;
+  }
+
+
+  /* ==========================================================================
+     ACTION EVENT
+     ========================================================================== */
+
+  private emitActionEvent(
+    action: GameAction,
+    result: ActionResult,
+    playerId: string
+  ): void {
+
+    if (
+      typeof window ===
+      "undefined"
+    ) {
+      return;
+    }
+
+
+    const detail:
+      GameActionEventDetail = {
+      action,
+      result,
+      playerId,
+    };
+
+
     window.dispatchEvent(
       new CustomEvent(
         "blackjack:action",
         {
-          detail: {
-            action,
-            state: this.state,
-          },
+          detail,
         }
       )
     );
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
+     TABLE AVAILABILITY
+     ========================================================================== */
+
+  isTableAvailable(): boolean {
+
+    if (
+      this.destroyed
+    ) {
+      return false;
+    }
+
+
+    if (
+      !this.state.introComplete
+    ) {
+      return false;
+    }
+
+
+    if (
+      this.blackjack.phase !==
+      "betting"
+    ) {
+      return false;
+    }
+
+
+    return (
+      this.blackjack
+        .getHumanPlayer() !==
+      undefined
+    );
+  }
+
+
+  /* ==========================================================================
      RENDER
-     ======================================================================== */
+     ========================================================================== */
 
-  private render() {
-    /*
-     * Renderer receives the complete visual state.
+  private render(): void {
 
-       Render order:
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
 
-       1. casino background
-       2. ambience
-       3. table
-       4. dealer
-       5. other players
-       6. deck
-       7. cards
-       8. chips
-       9. foreground lighting
-      10. pixel pass
-     */
 
     this.renderer.render(
       this.state
     );
   }
 
-  /* ========================================================================
-     PUBLIC CONTROL
-     ======================================================================== */
 
-  start() {
-    if (this.destroyed) {
+  /* ==========================================================================
+     LOOP CONTROL
+     ========================================================================== */
+
+  start(): void {
+
+    if (
+      this.destroyed
+    ) {
       return;
     }
 
-    this.running = true;
+
+    this.running =
+      true;
+
 
     this.lastTime =
-      performance.now();
+      typeof performance !==
+      "undefined"
+        ? performance.now()
+        : Date.now();
   }
 
-  pause() {
-    this.running = false;
-  }
 
-  resume() {
-    if (this.destroyed) {
+  pause(): void {
+
+    if (
+      this.destroyed
+    ) {
       return;
     }
 
-    this.running = true;
+
+    this.running =
+      false;
+  }
+
+
+  resume(): void {
+
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
+
+
+    this.running =
+      true;
+
 
     this.lastTime =
-      performance.now();
+      typeof performance !==
+      "undefined"
+        ? performance.now()
+        : Date.now();
   }
+
+
+  /* ==========================================================================
+     PUBLIC PHASE COMPATIBILITY
+     ========================================================================== */
 
   setPhase(
     phase: GamePhase
-  ) {
-    this.state.phase = phase;
+  ): void {
 
-    /*
-     * Lock interaction during loading
-     * and dealer/settlement transitions.
-     */
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
+
+
+    this.state.phase =
+      phase;
+
+
     this.state.interactionLocked =
       phase === "loading" ||
       phase === "dealer-turn" ||
       phase === "settling";
   }
 
+
   setInteractionLocked(
     locked: boolean
-  ) {
+  ): void {
+
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
+
+
     this.state.interactionLocked =
       locked;
   }
+
+
+  /* ==========================================================================
+     CAMERA
+     ========================================================================== */
 
   setCamera(
     x: number,
     y: number,
     zoom = 1
-  ) {
-    this.cameraTargetX = x;
+  ): void {
 
-    this.cameraTargetY = y;
+    if (
+      this.destroyed
+    ) {
+      return;
+    }
+
+
+    this.cameraTargetX =
+      Number.isFinite(x)
+        ? x
+        : 0;
+
+
+    this.cameraTargetY =
+      Number.isFinite(y)
+        ? y
+        : 0;
+
 
     this.cameraTargetZoom =
-      Math.max(
-        0.5,
-        Math.min(
-          2,
-          zoom
-        )
-      );
+      Number.isFinite(zoom)
+        ? Math.max(
+            0.5,
+            Math.min(
+              2,
+              zoom
+            )
+          )
+        : 1;
   }
 
-  /* ========================================================================
+
+  /* ==========================================================================
+     CURRENT GAME DATA
+     ========================================================================== */
+
+  getGameState() {
+
+    this.syncBlackjackState();
+
+
+    return {
+      visual:
+        this.state,
+
+      blackjack:
+        this.blackjack.getState(),
+
+      casino:
+        this.blackjack.getVisualState(),
+
+      human:
+        this.blackjack.getHumanPlayer(),
+    };
+  }
+
+
+  getPlayerBalance(): number {
+    return (
+      this.blackjack
+        .getHumanPlayer()
+        ?.balance ??
+      0
+    );
+  }
+
+
+  getPlayerBet(): number {
+    return (
+      this.blackjack
+        .getHumanPlayer()
+        ?.bet ??
+      0
+    );
+  }
+
+
+  getPlayerHand() {
+    return (
+      this.blackjack
+        .getHumanPlayer()
+        ?.hand ??
+      null
+    );
+  }
+
+
+  getDealerHand() {
+    return this.blackjack.dealer.hand;
+  }
+
+
+  /* ==========================================================================
      DEBUG
-     ======================================================================== */
+     ========================================================================== */
 
   getDebugState() {
+
+    const engineState =
+      this.blackjack.getState();
+
+    const human =
+      this.blackjack.getHumanPlayer();
+
+    const dealerHand =
+      this.blackjack
+        .dealer
+        .hand;
+
+
+    this.syncBlackjackState();
+
+
     return {
       running:
         this.running,
 
+      destroyed:
+        this.destroyed,
+
+      tableAvailable:
+        this.isTableAvailable(),
+
       phase:
         this.state.phase,
+
+      enginePhase:
+        engineState.phase,
+
+      introComplete:
+        this.state.introComplete,
+
+      introProgress:
+        this.introProgress,
+
+      interactionLocked:
+        this.state.interactionLocked,
 
       frame:
         this.state.frame,
@@ -1055,6 +3041,24 @@ export class Game {
       delta:
         this.state.delta,
 
+      roundNumber:
+        engineState.roundNumber,
+
+      activeSeat:
+        engineState.activeSeat,
+
+      activeHandIndex:
+        engineState.activeHandIndex,
+
+      roundLocked:
+        engineState.roundLocked,
+
+      dealerHoleCardRevealed:
+        engineState.dealerHoleCardRevealed,
+
+      dealerTurnCompleted:
+        engineState.dealerTurnCompleted,
+
       camera: {
         x:
           this.state.cameraX,
@@ -1064,6 +3068,17 @@ export class Game {
 
         zoom:
           this.state.cameraZoom,
+      },
+
+      cameraTarget: {
+        x:
+          this.cameraTargetX,
+
+        y:
+          this.cameraTargetY,
+
+        zoom:
+          this.cameraTargetZoom,
       },
 
       pointer: {
@@ -1077,42 +3092,172 @@ export class Game {
           this.state.pointerInside,
       },
 
+      focus:
+        this.state.isFocused,
+
+      human: {
+        exists:
+          !!human,
+
+        id:
+          human?.id ?? "",
+
+        balance:
+          human?.balance ?? 0,
+
+        bet:
+          human?.bet ?? 0,
+
+        handValue:
+          human?.hand.value ?? 0,
+
+        handState:
+          human?.hand.state ??
+          "empty",
+      },
+
+      dealer: {
+        value:
+          dealerHand.value,
+
+        hidden:
+          dealerHand.cards.some(
+            card =>
+              !card.faceUp
+          ),
+      },
+
       canvas: {
         width:
           this.canvas.width,
 
         height:
           this.canvas.height,
+
+        clientWidth:
+          this.widthSafe(
+            this.canvas.clientWidth
+          ),
+
+        clientHeight:
+          this.widthSafe(
+            this.canvas.clientHeight
+          ),
       },
     };
   }
 
-  /* ========================================================================
-     DESTROY
-     ======================================================================== */
 
-  destroy() {
-    if (this.destroyed) {
+  /* ==========================================================================
+     NUMBER SAFETY
+     ========================================================================== */
+
+  private widthSafe(
+    value: number
+  ): number {
+
+    return Number.isFinite(
+      value
+    )
+      ? value
+      : 0;
+  }
+
+
+  /* ==========================================================================
+     DESTROY
+     ========================================================================== */
+
+  destroy(): void {
+
+    if (
+      this.destroyed
+    ) {
       return;
     }
 
-    this.destroyed = true;
 
-    this.running = false;
+    this.destroyed =
+      true;
+
+
+    this.running =
+      false;
+
 
     cancelAnimationFrame(
       this.animationFrame
     );
 
+
+    this.animationFrame =
+      0;
+
+
     this.unbindEvents();
 
-    /*
-     * Destroy services safely.
-     */
-    this.renderer.destroy?.();
 
-    this.animation.destroy?.();
+    for (
+      const unsubscribe of
+        this.blackjackUnsubscribers
+    ) {
 
-    this.input.destroy?.();
+      try {
+        unsubscribe();
+      } catch {
+        /*
+         * Ignore individual cleanup failures.
+         */
+      }
+    }
+
+
+    this.blackjackUnsubscribers =
+      [];
+
+
+    try {
+      this.renderer.destroy?.();
+    } catch {
+      /* ignore cleanup error */
+    }
+
+
+    try {
+      this.animation.destroy?.();
+    } catch {
+      /* ignore cleanup error */
+    }
+
+
+    try {
+      this.input.destroy?.();
+    } catch {
+      /* ignore cleanup error */
+    }
+
+
+    try {
+      this.blackjack.destroy();
+    } catch {
+      /* ignore cleanup error */
+    }
+
+
+    this.state.phase =
+      "loading";
+
+    this.state.interactionLocked =
+      true;
+
+    this.state.introComplete =
+      false;
   }
 }
+
+
+/* ==========================================================================
+   DEFAULT EXPORT
+   ========================================================================== */
+
+export default Game;

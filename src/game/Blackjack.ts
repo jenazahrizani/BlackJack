@@ -1,7 +1,7 @@
 /* ==========================================================================
    BLACKJACK 21 — GAME LOGIC
    --------------------------------------------------------------------------
-   Pure blackjack rules and round state.
+   Real playable blackjack engine.
 
    Responsibilities:
    - Shoe / deck management
@@ -25,10 +25,20 @@
    Visual rendering belongs to Renderer.ts.
    Physical animation belongs to Animation.ts.
    Input belongs to Input.ts.
+
+   IMPORTANT
+   --------------------------------------------------------------------------
+   Entities.ts contains:
+     - player.hand
+     - player.secondaryHand
+
+   Therefore:
+     - normal hand
+     - one split
+     - maximum 2 simultaneous hands
    ========================================================================== */
 
 import {
-  createCard,
   createHand,
   createPlayer,
   createDealer,
@@ -37,14 +47,11 @@ import {
   getCardValue,
 
   type Card,
-  type CardRank,
   type Dealer,
   type Deck,
   type Hand,
   type Player,
   type PlayerBehavior,
-  type Suit,
-  type SeatState,
   type Table,
   type TableVisualState,
 } from "./Entities";
@@ -61,6 +68,7 @@ export type GameAction =
   | "double"
   | "split"
   | "insurance"
+  | "decline-insurance"
   | "surrender"
   | "repeat-bet"
   | "clear-bet"
@@ -112,17 +120,11 @@ export type Settlement = {
 
 export type ActionResult = {
   success: boolean;
-
   action: GameAction;
-
   reason?: string;
-
   card?: Card;
-
   hand?: Hand;
-
   createdHand?: Hand;
-
   settlement?: Settlement[];
 };
 
@@ -143,9 +145,7 @@ export type BlackjackEventName =
 
 export type BlackjackEvent = {
   name: BlackjackEventName;
-
   timestamp: number;
-
   detail: Record<string, unknown>;
 };
 
@@ -168,15 +168,21 @@ const DEFAULT_BANKROLL = 1250;
 
 const DEFAULT_DEALER_STANDS_ON = 17;
 
-const BLACKJACK_MULTIPLIER = 1.5;
+const DEFAULT_BLACKJACK_PAYOUT = 1.5;
 
-const INSURANCE_MULTIPLIER = 2;
+const INSURANCE_PAYOUT_MULTIPLIER = 2;
 
-const SURRENDER_MULTIPLIER = 0.5;
+const SURRENDER_RETURN_MULTIPLIER = 0.5;
 
-const MAX_SPLIT_HANDS = 4;
+const MAX_SPLIT_HANDS = 2;
 
-const MAX_DOUBLE_AFTER_SPLIT = true;
+const DEFAULT_DOUBLE_AFTER_SPLIT = true;
+
+const DEFAULT_ALLOW_INSURANCE = true;
+
+const DEFAULT_ALLOW_SURRENDER = false;
+
+const DEFAULT_SPLIT_ACES_ONE_CARD = true;
 
 
 /* ==========================================================================
@@ -214,8 +220,7 @@ export class Blackjack {
      ROUND
      ------------------------------------------------------------------------ */
 
-  phase: RoundPhase =
-    "waiting";
+  phase: RoundPhase = "waiting";
 
   activeSeat = -1;
 
@@ -233,11 +238,19 @@ export class Blackjack {
 
 
   /* ------------------------------------------------------------------------
-     SPECIAL BETS
+     INSURANCE
      ------------------------------------------------------------------------ */
 
   insuranceBets =
     new Map<string, number>();
+
+  insuranceDecisions =
+    new Set<string>();
+
+
+  /* ------------------------------------------------------------------------
+     SPECIAL HAND STATE
+     ------------------------------------------------------------------------ */
 
   surrenderedHands =
     new Set<string>();
@@ -247,8 +260,7 @@ export class Blackjack {
      RESULT
      ------------------------------------------------------------------------ */
 
-  settlements: Settlement[] =
-    [];
+  settlements: Settlement[] = [];
 
 
   /* ------------------------------------------------------------------------
@@ -273,6 +285,8 @@ export class Blackjack {
 
   readonly blackjackPayout: number;
 
+  readonly splitAcesOneCard: boolean;
+
 
   /* ------------------------------------------------------------------------
      EVENT BUS
@@ -296,14 +310,11 @@ export class Blackjack {
      STATE FLAGS
      ------------------------------------------------------------------------ */
 
-  private dealerHoleCardRevealed =
-    false;
+  private dealerHoleCardRevealed = false;
 
-  private dealerTurnCompleted =
-    false;
+  private dealerTurnCompleted = false;
 
-  private roundLocked =
-    false;
+  private roundLocked = false;
 
 
   /* ==========================================================================
@@ -330,6 +341,8 @@ export class Blackjack {
 
       blackjackPayout?: number;
 
+      splitAcesOneCard?: boolean;
+
       random?: () => number;
 
       table?: Partial<Table>;
@@ -344,8 +357,19 @@ export class Blackjack {
        TABLE
        ------------------------------------------------------------------------ */
 
-    this.table = {
+    const tableMinimumBet =
+      options.table?.minimumBet ??
+      DEFAULT_MIN_BET;
 
+    const tableMaximumBet =
+      options.table?.maximumBet ??
+      DEFAULT_MAX_BET;
+
+    const tableBlackjackPayout =
+      options.table?.blackjackPayout ??
+      DEFAULT_BLACKJACK_PAYOUT;
+
+    this.table = {
       x:
         options.table?.x ??
         0.5,
@@ -391,38 +415,29 @@ export class Blackjack {
         0.55,
 
       minimumBet:
-        options.minimumBet ??
-        options.table?.minimumBet ??
-        DEFAULT_MIN_BET,
+        tableMinimumBet,
 
       maximumBet:
-        options.maximumBet ??
-        options.table?.maximumBet ??
-        DEFAULT_MAX_BET,
+        tableMaximumBet,
 
       blackjackPayout:
-        options.blackjackPayout ??
-        options.table?.blackjackPayout ??
-        BLACKJACK_MULTIPLIER,
+        tableBlackjackPayout,
 
       dealerStandsOn:
         options.table?.dealerStandsOn ??
         DEFAULT_DEALER_STANDS_ON,
 
       dealerHitsSoft17:
-        options.dealerHitsSoft17 ??
         options.table?.dealerHitsSoft17 ??
         false,
 
       doubleAfterSplit:
-        options.allowDoubleAfterSplit ??
         options.table?.doubleAfterSplit ??
-        MAX_DOUBLE_AFTER_SPLIT,
+        DEFAULT_DOUBLE_AFTER_SPLIT,
 
       surrenderAllowed:
-        options.allowSurrender ??
         options.table?.surrenderAllowed ??
-        false,
+        DEFAULT_ALLOW_SURRENDER,
     };
 
 
@@ -444,7 +459,7 @@ export class Blackjack {
         1,
         Math.floor(
           options.minimumBet ??
-          this.table.minimumBet
+          tableMinimumBet
         )
       );
 
@@ -453,42 +468,70 @@ export class Blackjack {
         this.minimumBet,
         Math.floor(
           options.maximumBet ??
-          this.table.maximumBet
+          tableMaximumBet
         )
       );
 
     this.allowInsurance =
       options.allowInsurance ??
-      true;
+      DEFAULT_ALLOW_INSURANCE;
 
     this.allowSurrender =
       options.allowSurrender ??
-      this.table.surrenderAllowed;
+      (
+        options.table?.surrenderAllowed ??
+        DEFAULT_ALLOW_SURRENDER
+      );
 
     this.allowDoubleAfterSplit =
       options.allowDoubleAfterSplit ??
-      this.table.doubleAfterSplit;
+      (
+        options.table?.doubleAfterSplit ??
+        DEFAULT_DOUBLE_AFTER_SPLIT
+      );
 
     this.dealerHitsSoft17 =
       options.dealerHitsSoft17 ??
-      this.table.dealerHitsSoft17;
+      (
+        options.table?.dealerHitsSoft17 ??
+        false
+      );
 
+    /*
+     * Entities.ts currently supports only two hands:
+     * primary + secondary.
+     */
     this.maxSplitHands =
-      Math.max(
+      Math.min(
         2,
-        Math.floor(
-          options.maxSplitHands ??
-          MAX_SPLIT_HANDS
+        Math.max(
+          2,
+          Math.floor(
+            options.maxSplitHands ??
+            MAX_SPLIT_HANDS
+          )
         )
       );
 
     this.blackjackPayout =
-      options.blackjackPayout ??
-      this.table.blackjackPayout;
+      Number.isFinite(
+        options.blackjackPayout
+      )
+        ? Math.max(
+            1,
+            options.blackjackPayout ??
+            tableBlackjackPayout
+          )
+        : tableBlackjackPayout;
+
+    this.splitAcesOneCard =
+      options.splitAcesOneCard ??
+      DEFAULT_SPLIT_ACES_ONE_CARD;
 
     this.random =
-      options.random ??
-      Math.random;
+      typeof options.random === "function"
+        ? options.random
+        : Math.random;
 
 
     /* ------------------------------------------------------------------------
@@ -507,8 +550,7 @@ export class Blackjack {
        ------------------------------------------------------------------------ */
 
     this.players =
-      options.players ??
-      [
+      options.players ?? [
         createPlayer(
           1,
           "MICHAEL",
@@ -554,7 +596,7 @@ export class Blackjack {
 
 
     /* ------------------------------------------------------------------------
-       INITIAL BANKROLLS
+       INITIAL PLAYER STATE
        ------------------------------------------------------------------------ */
 
     for (
@@ -562,18 +604,30 @@ export class Blackjack {
     ) {
 
       if (
-        player.balance <= 0
+        !Number.isFinite(
+          player.balance
+        ) ||
+        player.balance < 0
       ) {
         player.balance =
           DEFAULT_BANKROLL;
       }
 
-      player.state =
-        "waiting";
+      if (
+        player.balance === 0
+      ) {
+        player.active = false;
+        player.eliminated = true;
+        player.state = "loser";
+      } else {
+        player.active = true;
+        player.eliminated = false;
+        player.state = "waiting";
+      }
 
       player.hand =
         createHand(
-          `hand-${player.seat}`
+          `hand-${player.seat}-1`
         );
 
       player.secondaryHand =
@@ -586,6 +640,16 @@ export class Blackjack {
         createChipStack(
           0
         );
+
+      this.pendingBets.set(
+        player.id,
+        0
+      );
+
+      this.insuranceBets.set(
+        player.id,
+        0
+      );
     }
 
 
@@ -604,7 +668,6 @@ export class Blackjack {
     name: BlackjackEventName,
     listener: BlackjackListener
   ) {
-
     let bucket =
       this.listeners.get(
         name
@@ -648,24 +711,25 @@ export class Blackjack {
     name: BlackjackEventName,
     detail: Record<string, unknown> = {}
   ) {
-
     const event: BlackjackEvent = {
       name,
-
-      timestamp:
-        Date.now(),
-
+      timestamp: Date.now(),
       detail,
     };
-
 
     this.listeners
       .get(name)
       ?.forEach(
-        (listener) =>
-          listener(event)
+        listener => {
+          try {
+            listener(event);
+          } catch {
+            /*
+             * Listener failure must never break the engine.
+             */
+          }
+        }
       );
-
 
     if (
       typeof window !==
@@ -688,7 +752,6 @@ export class Blackjack {
      ========================================================================== */
 
   shuffleShoe() {
-
     const cards =
       this.deck.cards;
 
@@ -696,12 +759,27 @@ export class Blackjack {
       let i =
         cards.length - 1;
       i > 0;
-      i--
+      i -= 1
     ) {
+      const randomValue =
+        this.random();
+
+      const normalizedRandom =
+        Number.isFinite(
+          randomValue
+        )
+          ? Math.min(
+              0.999999999999,
+              Math.max(
+                0,
+                randomValue
+              )
+            )
+          : Math.random();
 
       const j =
         Math.floor(
-          this.random() *
+          normalizedRandom *
           (i + 1)
         );
 
@@ -715,10 +793,8 @@ export class Blackjack {
         temp;
     }
 
-
     this.deck.remaining =
       cards.length;
-
 
     this.emit(
       "round:phase",
@@ -734,7 +810,6 @@ export class Blackjack {
 
 
   private rebuildShoe() {
-
     this.deck =
       createDeck(
         this.decks
@@ -748,34 +823,39 @@ export class Blackjack {
 
 
   private needsShuffle() {
-
     const totalCards =
-      this.decks * 52;
+      this.decks *
+      52;
 
     return (
       this.deck.remaining <=
       Math.floor(
-        totalCards * 0.25
+        totalCards *
+        0.25
       )
     );
   }
 
 
   /* ==========================================================================
-     DRAW
+     DRAW / DISCARD
      ========================================================================== */
 
   drawCard(
     faceUp = true
   ): Card {
-
+    /*
+     * If the shoe is low, rebuild before drawing.
+     */
     if (
       this.needsShuffle()
     ) {
       this.rebuildShoe();
     }
 
-
+    /*
+     * Defensive fallback.
+     */
     if (
       this.deck.cards.length ===
       0
@@ -783,17 +863,14 @@ export class Blackjack {
       this.rebuildShoe();
     }
 
-
     const card =
       this.deck.cards.pop();
-
 
     if (!card) {
       throw new Error(
         "Blackjack shoe is empty."
       );
     }
-
 
     card.faceUp =
       faceUp;
@@ -807,20 +884,18 @@ export class Blackjack {
     card.highlighted =
       false;
 
-
     this.deck.remaining =
       this.deck.cards.length;
-
 
     this.emit(
       "card:draw",
       {
         card,
+        faceUp,
         remaining:
           this.deck.remaining,
       }
     );
-
 
     return card;
   }
@@ -829,7 +904,6 @@ export class Blackjack {
   private discardCard(
     card: Card
   ) {
-
     card.state =
       "discarded";
 
@@ -849,60 +923,70 @@ export class Blackjack {
   evaluateHand(
     hand: Hand
   ): HandEvaluation {
+    let total =
+      0;
 
-    let hardValue = 0;
-
-    let aces = 0;
-
+    let aceCount =
+      0;
 
     for (
       const card of hand.cards
     ) {
-
       const value =
         getCardValue(
           card.rank
         );
 
-      hardValue +=
+      total +=
         value;
 
       if (
         card.rank ===
         "A"
       ) {
-        aces +=
+        aceCount +=
           1;
       }
     }
 
-
+    /*
+     * Convert aces from 11 to 1 when required.
+     */
     let value =
-      hardValue;
+      total;
 
+    let acesToReduce =
+      aceCount;
 
     while (
       value > 21 &&
-      aces > 0
+      acesToReduce > 0
     ) {
-
       value -=
         10;
 
-      aces -=
+      acesToReduce -=
         1;
     }
 
+    /*
+     * Hard value means every ace is valued as 1.
+     */
+    const hardValue =
+      Math.max(
+        0,
+        total -
+        aceCount * 10
+      );
 
+    /*
+     * Soft means at least one ace is still being counted as 11.
+     */
     const soft =
-      hand.cards.some(
-        (card) =>
-          card.rank ===
-          "A"
-      ) &&
-      value ===
+      aceCount > 0 &&
+      value <= 21 &&
+      value >
         hardValue;
-
 
     const blackjack =
       hand.cards.length ===
@@ -910,11 +994,9 @@ export class Blackjack {
       value ===
         21;
 
-
     const bust =
       value >
       21;
-
 
     return {
       value,
@@ -972,12 +1054,10 @@ export class Blackjack {
   updateHandEvaluation(
     hand: Hand
   ) {
-
     const evaluation =
       this.evaluateHand(
         hand
       );
-
 
     hand.value =
       evaluation.value;
@@ -991,80 +1071,115 @@ export class Blackjack {
     hand.busted =
       evaluation.bust;
 
-
     if (
       evaluation.bust
     ) {
-
       hand.state =
         "busted";
 
-    } else if (
+      return;
+    }
+
+    if (
       evaluation.blackjack
     ) {
-
       hand.state =
         "blackjack";
 
-    } else if (
-      hand.state ===
-      "empty"
-    ) {
-
-      hand.state =
-        "playing";
+      return;
     }
+
+    /*
+     * Don't overwrite finished states.
+     */
+    if (
+      hand.state ===
+        "standing" ||
+      hand.state ===
+        "winner" ||
+      hand.state ===
+        "loser" ||
+      hand.state ===
+        "push"
+    ) {
+      return;
+    }
+
+    hand.state =
+      "playing";
   }
 
 
   /* ==========================================================================
-     HAND RESET
+     RESET HELPERS
      ========================================================================== */
 
-  private resetPlayerForRound(
-    player: Player
-  ) {
+  private resetHandsOnly() {
+    for (
+      const player of this.players
+    ) {
+      player.hand.cards =
+        [];
 
-    player.hand =
-      createHand(
-        `hand-${player.seat}-1`
-      );
+      player.hand.state =
+        "empty";
 
-    player.secondaryHand =
-      null;
+      player.hand.value =
+        0;
 
-    player.bet =
+      player.hand.soft =
+        false;
+
+      player.hand.blackjack =
+        false;
+
+      player.hand.busted =
+        false;
+
+      player.hand.bet =
+        player.bet;
+
+      player.secondaryHand =
+        null;
+
+      /*
+       * Player may be part of current round if they have a valid bet.
+       */
+      if (
+        player.bet >=
+          this.minimumBet &&
+        player.active &&
+        !player.eliminated
+      ) {
+        player.state =
+          "playing";
+      } else {
+        player.state =
+          "waiting";
+      }
+    }
+
+    this.dealer.hand.cards =
+      [];
+
+    this.dealer.hand.state =
+      "empty";
+
+    this.dealer.hand.value =
       0;
 
-    player.state =
-      "waiting";
-
-    player.active =
-      true;
-
-    player.eliminated =
+    this.dealer.hand.soft =
       false;
 
-    player.chips =
-      createChipStack(
-        0
-      );
+    this.dealer.hand.blackjack =
+      false;
 
-
-    this.pendingBets.set(
-      player.id,
-      0
-    );
-
-    this.insuranceBets.set(
-      player.id,
-      0
-    );
+    this.dealer.hand.busted =
+      false;
   }
 
 
   private resetDealerForRound() {
-
     this.dealer.hand =
       createHand(
         "dealer-hand"
@@ -1076,8 +1191,27 @@ export class Blackjack {
     this.dealer.pose =
       "neutral";
 
+    this.dealer.position = {
+      x:
+        0.5,
+
+      y:
+        0.30,
+    };
+
+    this.dealer.targetPosition = {
+      x:
+        0.5,
+
+      y:
+        0.30,
+    };
+
     this.dealer.currentSeat =
       null;
+
+    this.dealer.attention =
+      "table";
 
     this.dealerHoleCardRevealed =
       false;
@@ -1104,12 +1238,10 @@ export class Blackjack {
     playerId: string,
     amount: number
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -1118,20 +1250,39 @@ export class Blackjack {
       );
     }
 
-
     if (
+      this.phase !==
+        "waiting" &&
       this.phase !==
         "betting" &&
       this.phase !==
-        "waiting"
+        "complete"
     ) {
-
       return this.fail(
         "increase-bet",
         "Betting is closed."
       );
     }
 
+    if (
+      !player.active ||
+      player.eliminated
+    ) {
+      return this.fail(
+        "increase-bet",
+        "Player is not active."
+      );
+    }
+
+    if (
+      player.balance <
+      this.minimumBet
+    ) {
+      return this.fail(
+        "increase-bet",
+        "Insufficient balance."
+      );
+    }
 
     const safeAmount =
       this.clampBet(
@@ -1139,20 +1290,23 @@ export class Blackjack {
         player.balance
       );
 
-
+    /*
+     * allow clearing through clearBet(), not through setBet().
+     */
     if (
       safeAmount <
       this.minimumBet
     ) {
-
       return this.fail(
         "increase-bet",
         `Minimum bet is ${this.minimumBet}.`
       );
     }
 
-
     player.bet =
+      safeAmount;
+
+    player.hand.bet =
       safeAmount;
 
     player.chips =
@@ -1160,12 +1314,10 @@ export class Blackjack {
         safeAmount
       );
 
-
     this.pendingBets.set(
       player.id,
       safeAmount
     );
-
 
     this.emit(
       "bet:change",
@@ -1175,9 +1327,11 @@ export class Blackjack {
 
         amount:
           safeAmount,
+
+        balance:
+          player.balance,
       }
     );
-
 
     return {
       success:
@@ -1193,12 +1347,10 @@ export class Blackjack {
     playerId: string,
     step = 5
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -1207,11 +1359,31 @@ export class Blackjack {
       );
     }
 
+    const safeStep =
+      Number.isFinite(
+        step
+      )
+        ? Math.max(
+            1,
+            Math.floor(
+              step
+            )
+          )
+        : 5;
+
+    const current =
+      player.bet >=
+      this.minimumBet
+        ? player.bet
+        : 0;
+
+    const next =
+      current +
+      safeStep;
 
     return this.setBet(
       player.id,
-      player.bet +
-        step
+      next
     );
   }
 
@@ -1220,12 +1392,10 @@ export class Blackjack {
     playerId: string,
     step = 5
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -1234,21 +1404,47 @@ export class Blackjack {
       );
     }
 
+    if (
+      this.phase !==
+        "waiting" &&
+      this.phase !==
+        "betting" &&
+      this.phase !==
+        "complete"
+    ) {
+      return this.fail(
+        "decrease-bet",
+        "Betting is closed."
+      );
+    }
+
+    const safeStep =
+      Number.isFinite(
+        step
+      )
+        ? Math.max(
+            1,
+            Math.floor(
+              step
+            )
+          )
+        : 5;
 
     const next =
       Math.max(
         0,
         player.bet -
-          step
+        safeStep
       );
-
 
     if (
       next ===
       0
     ) {
-
       player.bet =
+        0;
+
+      player.hand.bet =
         0;
 
       player.chips =
@@ -1256,12 +1452,10 @@ export class Blackjack {
           0
         );
 
-
       this.pendingBets.set(
         player.id,
         0
       );
-
 
       this.emit(
         "bet:change",
@@ -1271,9 +1465,11 @@ export class Blackjack {
 
           amount:
             0,
+
+          balance:
+            player.balance,
         }
       );
-
 
       return {
         success:
@@ -1283,7 +1479,6 @@ export class Blackjack {
           "decrease-bet",
       };
     }
-
 
     return this.setBet(
       player.id,
@@ -1295,12 +1490,10 @@ export class Blackjack {
   clearBet(
     playerId: string
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -1309,8 +1502,24 @@ export class Blackjack {
       );
     }
 
+    if (
+      this.phase !==
+        "waiting" &&
+      this.phase !==
+        "betting" &&
+      this.phase !==
+        "complete"
+    ) {
+      return this.fail(
+        "clear-bet",
+        "Betting is closed."
+      );
+    }
 
     player.bet =
+      0;
+
+    player.hand.bet =
       0;
 
     player.chips =
@@ -1318,12 +1527,10 @@ export class Blackjack {
         0
       );
 
-
     this.pendingBets.set(
       player.id,
       0
     );
-
 
     this.emit(
       "bet:change",
@@ -1333,9 +1540,11 @@ export class Blackjack {
 
         amount:
           0,
+
+        balance:
+          player.balance,
       }
     );
-
 
     return {
       success:
@@ -1351,7 +1560,6 @@ export class Blackjack {
     amount: number,
     balance: number
   ) {
-
     if (
       !Number.isFinite(
         amount
@@ -1360,16 +1568,16 @@ export class Blackjack {
       return 0;
     }
 
-
     const max =
       Math.min(
         this.maximumBet,
         Math.max(
           0,
-          balance
+          Math.floor(
+            balance
+          )
         )
       );
-
 
     return Math.floor(
       Math.max(
@@ -1388,7 +1596,6 @@ export class Blackjack {
      ========================================================================== */
 
   startRound(): ActionResult {
-
     if (
       this.roundLocked
     ) {
@@ -1398,31 +1605,55 @@ export class Blackjack {
       );
     }
 
+    if (
+      this.phase !==
+        "waiting" &&
+      this.phase !==
+        "betting" &&
+      this.phase !==
+        "complete"
+    ) {
+      return this.fail(
+        "deal",
+        "The table is currently busy."
+      );
+    }
 
-    this.phase =
-      "betting";
-
-    this.roundNumber +=
-      1;
-
-
-    this.setRoundState(
-      "betting"
-    );
-
-
+    /*
+     * NPCs choose their wagers first.
+     */
     this.prepareNPCBets();
-
 
     const human =
       this.getHumanPlayer();
 
+    if (!human) {
+      return this.fail(
+        "deal",
+        "Human player not found."
+      );
+    }
 
     if (
-      !human ||
-      human.bet <
-        this.minimumBet
+      !human.active ||
+      human.eliminated
     ) {
+      return this.fail(
+        "deal",
+        "Human player is eliminated."
+      );
+    }
+
+    if (
+      human.bet <
+      this.minimumBet
+    ) {
+      this.phase =
+        "betting";
+
+      this.setRoundState(
+        "betting"
+      );
 
       return this.fail(
         "deal",
@@ -1430,18 +1661,38 @@ export class Blackjack {
       );
     }
 
+    if (
+      human.bet >
+      human.balance
+    ) {
+      return this.fail(
+        "deal",
+        "Bet exceeds available balance."
+      );
+    }
 
+    /*
+     * A round is now locked.
+     */
     this.roundLocked =
       true;
 
+    this.roundNumber +=
+      1;
+
+    this.resetHandsOnly();
+
+    this.resetDealerForRound();
+
+    this.insuranceBets.clear();
+
+    this.insuranceDecisions.clear();
+
+    this.surrenderedHands.clear();
 
     this.setRoundState(
       "initial-deal"
     );
-
-
-    this.resetHandsOnly();
-
 
     this.emit(
       "round:start",
@@ -1451,12 +1702,13 @@ export class Blackjack {
 
         humanBet:
           human.bet,
+
+        playerCount:
+          this.getBettingPlayers().length,
       }
     );
 
-
     this.initialDeal();
-
 
     return {
       success:
@@ -1469,11 +1721,9 @@ export class Blackjack {
 
 
   private prepareNPCBets() {
-
     for (
       const player of this.players
     ) {
-
       if (
         player.type !==
         "npc"
@@ -1481,25 +1731,42 @@ export class Blackjack {
         continue;
       }
 
+      if (
+        !player.active ||
+        player.eliminated
+      ) {
+        continue;
+      }
 
       if (
-        player.balance <=
-        0
+        player.balance <
+        this.minimumBet
       ) {
+        player.active =
+          false;
 
         player.eliminated =
           true;
 
-        player.active =
-          false;
+        player.bet =
+          0;
+
+        player.hand.bet =
+          0;
+
+        player.chips =
+          createChipStack(
+            0
+          );
+
+        player.state =
+          "loser";
 
         continue;
       }
 
-
       const existing =
         player.bet;
-
 
       if (
         existing >=
@@ -1509,9 +1776,13 @@ export class Blackjack {
         existing <=
           player.balance
       ) {
+        this.pendingBets.set(
+          player.id,
+          existing
+        );
+
         continue;
       }
-
 
       const bet =
         this.chooseNPCBet(
@@ -1519,8 +1790,10 @@ export class Blackjack {
           player.behavior
         );
 
-
       player.bet =
+        bet;
+
+      player.hand.bet =
         bet;
 
       player.chips =
@@ -1528,10 +1801,23 @@ export class Blackjack {
           bet
         );
 
-
       this.pendingBets.set(
         player.id,
         bet
+      );
+
+      this.emit(
+        "bet:change",
+        {
+          playerId:
+            player.id,
+
+          amount:
+            bet,
+
+          balance:
+            player.balance,
+        }
       );
     }
   }
@@ -1541,15 +1827,19 @@ export class Blackjack {
     balance: number,
     behavior: PlayerBehavior
   ) {
+    if (
+      balance <
+      this.minimumBet
+    ) {
+      return 0;
+    }
 
     let base =
       this.minimumBet;
 
-
     switch (
       behavior
     ) {
-
       case "conservative":
         base =
           this.minimumBet;
@@ -1557,26 +1847,20 @@ export class Blackjack {
 
       case "balanced":
         base =
-          Math.round(
-            this.minimumBet *
-            3
-          );
+          this.minimumBet *
+          3;
         break;
 
       case "aggressive":
         base =
-          Math.round(
-            this.minimumBet *
-            6
-          );
+          this.minimumBet *
+          6;
         break;
 
       case "casual":
         base =
-          Math.round(
-            this.minimumBet *
-            2
-          );
+          this.minimumBet *
+          2;
         break;
 
       case "nervous":
@@ -1585,7 +1869,6 @@ export class Blackjack {
         break;
     }
 
-
     base =
       Math.min(
         base,
@@ -1593,72 +1876,56 @@ export class Blackjack {
         balance
       );
 
+    if (
+      base <
+      this.minimumBet
+    ) {
+      return 0;
+    }
 
-    return Math.max(
-      this.minimumBet,
+    return Math.floor(
       base
     );
   }
 
 
-  private resetHandsOnly() {
+  /* ==========================================================================
+     PLAYER GROUP HELPERS
+     ========================================================================== */
 
-    for (
-      const player of this.players
-    ) {
-
-      player.hand.cards =
-        [];
-
-      player.hand.state =
-        "empty";
-
-      player.hand.value =
-        0;
-
-      player.hand.soft =
-        false;
-
-      player.hand.blackjack =
-        false;
-
-      player.hand.busted =
-        false;
-
-      player.secondaryHand =
-        null;
-
-
-      if (
+  /*
+   * Players eligible to place a bet before a round.
+   */
+  private getBettingPlayers() {
+    return this.players.filter(
+      player =>
+        player.active &&
+        !player.eliminated &&
         player.bet >=
-        this.minimumBet
-      ) {
-        player.state =
-          "playing";
-      } else {
-        player.state =
-          "waiting";
-      }
-    }
+          this.minimumBet &&
+        player.bet <=
+          player.balance
+    );
+  }
 
 
-    this.dealer.hand.cards =
-      [];
-
-    this.dealer.hand.state =
-      "empty";
-
-    this.dealer.hand.value =
-      0;
-
-    this.dealer.hand.soft =
-      false;
-
-    this.dealer.hand.blackjack =
-      false;
-
-    this.dealer.hand.busted =
-      false;
+  /*
+   * Players that are actually participating in the current round.
+   *
+   * IMPORTANT:
+   * Their balance has already had the wager deducted,
+   * therefore we MUST NOT use `player.bet <= player.balance` here.
+   */
+  private getRoundPlayers() {
+    return this.players.filter(
+      player =>
+        player.active &&
+        !player.eliminated &&
+        player.hand.cards.length >
+          0 &&
+        player.hand.bet >=
+          this.minimumBet
+    );
   }
 
 
@@ -1667,78 +1934,84 @@ export class Blackjack {
      ========================================================================== */
 
   private initialDeal() {
-
     const activePlayers =
-      this.players.filter(
-        (player) =>
-          player.active &&
-          !player.eliminated &&
-          player.bet >=
-            this.minimumBet &&
-          player.bet <=
-            Math.min(
-              this.maximumBet,
-              player.balance
-            )
+      this.getBettingPlayers();
+
+    if (
+      activePlayers.length ===
+      0
+    ) {
+      this.roundLocked =
+        false;
+
+      this.setRoundState(
+        "betting"
       );
 
+      this.fail(
+        "deal",
+        "No eligible players."
+      );
+
+      return;
+    }
 
     /*
-     * Deduct initial wagers.
+     * Deduct wagers.
      */
     for (
       const player of activePlayers
     ) {
-
       player.balance -=
         player.bet;
 
       player.hand.bet =
         player.bet;
+
+      player.chips =
+        createChipStack(
+          player.bet
+        );
+
+      player.state =
+        "playing";
     }
 
-
     /*
-     * First player card.
+     * Round-robin:
+     *
+     * P1
+     * P2
+     * P3
+     * Dealer up
+     * P1
+     * P2
+     * P3
+     * Dealer hole
      */
     for (
       const player of activePlayers
     ) {
-
       this.dealToPlayer(
         player
       );
     }
 
-
-    /*
-     * Dealer up card.
-     */
     this.dealToDealer(
       true
     );
 
-
-    /*
-     * Second player card.
-     */
     for (
       const player of activePlayers
     ) {
-
       this.dealToPlayer(
         player
       );
     }
 
-
-    /*
-     * Dealer hole card.
-     */
     this.dealToDealer(
       false
     );
-
 
     this.emit(
       "cards:deal",
@@ -1751,74 +2024,59 @@ export class Blackjack {
       }
     );
 
-
     /*
-     * Player natural blackjacks.
+     * Detect player natural blackjacks.
      */
     for (
       const player of activePlayers
     ) {
-
       this.updateHandEvaluation(
         player.hand
       );
 
-
       if (
         player.hand.blackjack
       ) {
-
         player.state =
           "blackjack";
       }
     }
 
-
+    /*
+     * Evaluate dealer including hidden card.
+     */
     this.updateHandEvaluation(
       this.dealer.hand
     );
 
-
     /*
-     * Dealer Ace → insurance window.
+     * Insurance only when dealer upcard is an ace.
      */
     if (
-      this.dealer.hand.cards.length ===
-        2 &&
+      this.allowInsurance &&
       this.isDealerUpcardAce()
     ) {
+      this.beginInsuranceWindow(
+        activePlayers
+      );
 
-      if (
-        this.allowInsurance
-      ) {
-
-        this.setRoundState(
-          "insurance"
-        );
-
-        return;
-      }
+      return;
     }
 
-
     /*
-     * Dealer blackjack.
+     * Dealer blackjack before normal player turns.
      */
     if (
       this.isBlackjack(
         this.dealer.hand
       )
     ) {
-
-      this.setRoundState(
-        "settlement"
+      this.beginDealerTurn(
+        true
       );
-
-      this.settleRound();
 
       return;
     }
-
 
     this.beginPlayerTurns(
       activePlayers
@@ -1829,25 +2087,20 @@ export class Blackjack {
   private dealToPlayer(
     player: Player
   ) {
-
     const card =
       this.drawCard(
         true
       );
 
-
-    card.state =
-      "dealing";
-
-
     player.hand.cards.push(
       card
     );
 
+    card.state =
+      "dealing";
 
     card.zIndex =
       player.hand.cards.length;
-
 
     this.updateHandEvaluation(
       player.hand
@@ -1858,35 +2111,28 @@ export class Blackjack {
   private dealToDealer(
     faceUp: boolean
   ) {
-
     const card =
       this.drawCard(
         faceUp
       );
 
-
-    card.state =
-      "dealing";
-
-
     this.dealer.hand.cards.push(
       card
     );
 
+    card.state =
+      "dealing";
 
     card.zIndex =
       this.dealer.hand.cards.length;
-
 
     this.updateHandEvaluation(
       this.dealer.hand
     );
 
-
     if (
       !faceUp
     ) {
-
       this.dealerHoleCardRevealed =
         false;
     }
@@ -1897,11 +2143,118 @@ export class Blackjack {
      INSURANCE
      ========================================================================== */
 
+  private beginInsuranceWindow(
+    activePlayers: Player[]
+  ) {
+    this.insuranceBets.clear();
+
+    this.insuranceDecisions.clear();
+
+    for (
+      const player of activePlayers
+    ) {
+      this.insuranceBets.set(
+        player.id,
+        0
+      );
+
+      /*
+       * Natural blackjack cannot meaningfully take insurance here.
+       */
+      if (
+        player.hand.blackjack
+      ) {
+        this.insuranceDecisions.add(
+          player.id
+        );
+      }
+    }
+
+    this.setRoundState(
+      "insurance"
+    );
+
+    /*
+     * NPC decisions.
+     */
+    for (
+      const player of activePlayers
+    ) {
+      if (
+        player.type !==
+        "npc" ||
+        player.hand.blackjack
+      ) {
+        continue;
+      }
+
+      this.resolveNPCInsurance(
+        player
+      );
+    }
+
+    this.tryFinishInsuranceWindow();
+  }
+
+
+  private resolveNPCInsurance(
+    player: Player
+  ) {
+    if (
+      this.phase !==
+      "insurance"
+    ) {
+      return;
+    }
+
+    if (
+      this.insuranceDecisions.has(
+        player.id
+      )
+    ) {
+      return;
+    }
+
+    const maximum =
+      Math.min(
+        Math.floor(
+          player.bet / 2
+        ),
+        Math.max(
+          0,
+          Math.floor(
+            player.balance
+          )
+        )
+      );
+
+    /*
+     * Aggressive NPCs take insurance.
+     * Others decline.
+     */
+    if (
+      player.behavior ===
+        "aggressive" &&
+      maximum > 0
+    ) {
+      this.takeInsurance(
+        player.id,
+        maximum
+      );
+
+      return;
+    }
+
+    this.declineInsurance(
+      player.id
+    );
+  }
+
+
   takeInsurance(
     playerId: string,
     amount?: number
   ): ActionResult {
-
     if (
       this.phase !==
       "insurance"
@@ -1912,12 +2265,10 @@ export class Blackjack {
       );
     }
 
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -1925,7 +2276,6 @@ export class Blackjack {
         "Player not found."
       );
     }
-
 
     if (
       !this.allowInsurance
@@ -1936,23 +2286,54 @@ export class Blackjack {
       );
     }
 
+    if (
+      this.insuranceDecisions.has(
+        player.id
+      )
+    ) {
+      return this.fail(
+        "insurance",
+        "Insurance decision already made."
+      );
+    }
+
+    if (
+      player.hand.blackjack
+    ) {
+      return this.fail(
+        "insurance",
+        "A natural blackjack does not require insurance."
+      );
+    }
 
     const maximum =
       Math.min(
-        player.bet / 2,
-        player.balance
+        Math.floor(
+          player.bet / 2
+        ),
+        Math.max(
+          0,
+          Math.floor(
+            player.balance
+          )
+        )
       );
 
-
-    const wager =
-      Math.floor(
-        amount ??
-        maximum
+    const safeAmount =
+      Math.min(
+        maximum,
+        Math.max(
+          0,
+          Math.floor(
+            amount ??
+            maximum
+          )
+        )
       );
-
 
     if (
-      wager <= 0
+      safeAmount <=
+      0
     ) {
       return this.fail(
         "insurance",
@@ -1960,21 +2341,17 @@ export class Blackjack {
       );
     }
 
-
     player.balance -=
-      wager;
-
+      safeAmount;
 
     this.insuranceBets.set(
       player.id,
-      wager
+      safeAmount
     );
 
-
-    this.setRoundState(
-      "player-turn"
+    this.insuranceDecisions.add(
+      player.id
     );
-
 
     this.emit(
       "player:action",
@@ -1986,32 +2363,11 @@ export class Blackjack {
           player.id,
 
         amount:
-          wager,
+          safeAmount,
       }
     );
 
-
-    if (
-      this.isBlackjack(
-        this.dealer.hand
-      )
-    ) {
-
-      this.revealDealerHoleCard();
-
-      this.setRoundState(
-        "settlement"
-      );
-
-      this.settleRound();
-
-    } else {
-
-      this.beginPlayerTurns(
-        this.getActivePlayers()
-      );
-    }
-
+    this.tryFinishInsuranceWindow();
 
     return {
       success:
@@ -2023,6 +2379,122 @@ export class Blackjack {
   }
 
 
+  declineInsurance(
+    playerId: string
+  ): ActionResult {
+    if (
+      this.phase !==
+      "insurance"
+    ) {
+      return this.fail(
+        "decline-insurance",
+        "Insurance is not available."
+      );
+    }
+
+    const player =
+      this.getPlayer(
+        playerId
+      );
+
+    if (!player) {
+      return this.fail(
+        "decline-insurance",
+        "Player not found."
+      );
+    }
+
+    if (
+      this.insuranceDecisions.has(
+        player.id
+      )
+    ) {
+      return this.fail(
+        "decline-insurance",
+        "Insurance decision already made."
+      );
+    }
+
+    this.insuranceBets.set(
+      player.id,
+      0
+    );
+
+    this.insuranceDecisions.add(
+      player.id
+    );
+
+    this.emit(
+      "player:action",
+      {
+        action:
+          "decline-insurance",
+
+        playerId:
+          player.id,
+      }
+    );
+
+    this.tryFinishInsuranceWindow();
+
+    return {
+      success:
+        true,
+
+      action:
+        "decline-insurance",
+    };
+  }
+
+
+  private tryFinishInsuranceWindow() {
+    /*
+     * IMPORTANT:
+     * Use players actually in the round.
+     * Do NOT use getActivePlayers(), because balances
+     * have already been reduced by the original wagers.
+     */
+    const eligible =
+      this.getRoundPlayers().filter(
+        player =>
+          !player.hand.blackjack
+      );
+
+    const allResolved =
+      eligible.every(
+        player =>
+          this.insuranceDecisions.has(
+            player.id
+          )
+      );
+
+    if (
+      !allResolved
+    ) {
+      return;
+    }
+
+    const dealerBlackjack =
+      this.isBlackjack(
+        this.dealer.hand
+      );
+
+    if (
+      dealerBlackjack
+    ) {
+      this.beginDealerTurn(
+        true
+      );
+
+      return;
+    }
+
+    this.beginPlayerTurns(
+      this.getRoundPlayers()
+    );
+  }
+
+
   /* ==========================================================================
      PLAYER TURN SYSTEM
      ========================================================================== */
@@ -2030,66 +2502,53 @@ export class Blackjack {
   private beginPlayerTurns(
     activePlayers: Player[]
   ) {
-
     const playable =
-      activePlayers.filter(
-        (player) =>
-          !player.hand.blackjack &&
-          !player.hand.busted &&
-          player.hand.cards.length >
-            0
+      this.getPlayableEntries(
+        activePlayers
       );
-
 
     if (
       playable.length ===
       0
     ) {
-
       this.beginDealerTurn();
 
       return;
     }
 
-
     const first =
       playable[0];
 
-
     this.activeSeat =
-      first.seat;
+      first.player.seat;
 
     this.activeHandIndex =
-      0;
-
+      first.handIndex;
 
     this.setRoundState(
       "player-turn"
     );
 
-
     this.emit(
       "player:turn",
       {
         playerId:
-          first.id,
+          first.player.id,
 
         seat:
-          first.seat,
+          first.player.seat,
 
         handIndex:
-          0,
+          first.handIndex,
       }
     );
 
-
     if (
-      first.type ===
+      first.player.type ===
       "npc"
     ) {
-
       this.resolveNPCPlayer(
-        first
+        first.player
       );
     }
   }
@@ -2098,38 +2557,38 @@ export class Blackjack {
   private finishCurrentPlayerTurn(
     player: Player
   ) {
+    const currentHand =
+      this.getActivePlayerHand(
+        player
+      );
 
-    player.state =
-      this.handIsFinished(
-        this.getActivePlayerHand(
-          player
-        ) ?? player.hand
+    if (
+      currentHand &&
+      !this.handIsFinished(
+        currentHand
       )
-        ? this.mapHandState(
-            this.getActivePlayerHand(
-              player
-            ) ?? player.hand
-          )
-        : "standing";
+    ) {
+      currentHand.state =
+        "standing";
+    }
 
+    this.syncPlayerState(
+      player
+    );
 
     const next =
-      this.nextPlayerWithPlayableHand();
-
+      this.nextPlayableEntry();
 
     if (next) {
-
       this.activeSeat =
         next.player.seat;
 
       this.activeHandIndex =
         next.handIndex;
 
-
       this.setRoundState(
         "player-turn"
       );
-
 
       this.emit(
         "player:turn",
@@ -2145,171 +2604,141 @@ export class Blackjack {
         }
       );
 
-
       if (
         next.player.type ===
         "npc"
       ) {
-
         this.resolveNPCPlayer(
           next.player
         );
       }
 
-
       return;
     }
-
 
     this.beginDealerTurn();
   }
 
 
-  private nextPlayerWithPlayableHand():
-    | {
-        player: Player;
-        handIndex: number;
-      }
-    | null {
-
+  private getPlayableEntries(
+    players: Player[]
+  ) {
     const ordered =
-      [
-        ...this.players,
-      ].sort(
-        (a, b) =>
-          a.seat -
-          b.seat
-      );
-
-
-    const start =
-      ordered.findIndex(
-        (player) =>
-          player.seat ===
-          this.activeSeat
-      );
-
-
-    /*
-     * Current player's secondary hand first.
-     */
-    const current =
-      this.getPlayerBySeat(
-        this.activeSeat
-      );
-
-
-    if (current) {
-
-      const currentHands =
-        [
-          current.hand,
-          current.secondaryHand,
-        ].filter(
-          (
-            hand
-          ): hand is Hand =>
-            Boolean(hand)
+      [...players]
+        .sort(
+          (a, b) =>
+            a.seat -
+            b.seat
         );
 
+    const entries: Array<{
+      player: Player;
+      handIndex: number;
+    }> = [];
 
-      for (
-        let i = 0;
-        i <
-        currentHands.length;
-        i++
-      ) {
-
-        if (
-          this.handIsPlayable(
-            currentHands[i]
-          ) &&
-          (
-            i !==
-              this.activeHandIndex ||
-            this.activeHandIndex > 0
-          )
-        ) {
-
-          return {
-            player:
-              current,
-
-            handIndex:
-              i,
-          };
-        }
-      }
-    }
-
-
-    /*
-     * Search other seats.
-     */
     for (
-      let offset = 1;
-      offset <=
-        ordered.length;
-      offset++
+      const player of ordered
     ) {
-
-      const index =
-        (
-          start +
-          offset
-        ) %
-        ordered.length;
-
-
-      const player =
-        ordered[index];
-
-
       if (
-        !player ||
         !player.active ||
         player.eliminated
       ) {
         continue;
       }
 
-
-      const hands =
-        [
-          player.hand,
-          player.secondaryHand,
-        ].filter(
-          (
-            hand
-          ): hand is Hand =>
-            Boolean(hand)
-        );
-
-
-      for (
-        let handIndex = 0;
-        handIndex <
-          hands.length;
-        handIndex++
+      if (
+        this.handIsPlayable(
+          player.hand
+        )
       ) {
+        entries.push({
+          player,
+          handIndex:
+            0,
+        });
+      }
 
-        if (
-          this.handIsPlayable(
-            hands[handIndex]
-          )
-        ) {
-
-          return {
-            player,
-
-            handIndex,
-          };
-        }
+      if (
+        player.secondaryHand &&
+        this.handIsPlayable(
+          player.secondaryHand
+        )
+      ) {
+        entries.push({
+          player,
+          handIndex:
+            1,
+        });
       }
     }
 
+    return entries;
+  }
 
-    return null;
+
+  private nextPlayableEntry():
+    | {
+        player: Player;
+        handIndex: number;
+      }
+    | null {
+    const entries =
+      this.getPlayableEntries(
+        this.getRoundPlayers()
+      );
+
+    if (
+      entries.length ===
+      0
+    ) {
+      return null;
+    }
+
+    const currentIndex =
+      entries.findIndex(
+        entry =>
+          entry.player.seat ===
+            this.activeSeat &&
+          entry.handIndex ===
+            this.activeHandIndex
+      );
+
+    if (
+      currentIndex >=
+      0
+    ) {
+      return (
+        entries[
+          currentIndex + 1
+        ] ??
+        null
+      );
+    }
+
+    /*
+     * Find next seat after current active seat.
+     */
+    const afterCurrent =
+      entries
+        .filter(
+          entry =>
+            entry.player.seat >
+            this.activeSeat
+        )
+        .sort(
+          (a, b) =>
+            a.player.seat -
+            b.player.seat
+        );
+
+    if (
+      afterCurrent.length >
+      0
+    ) {
+      return afterCurrent[0];
+    }
+
+    return entries[0];
   }
 
 
@@ -2320,12 +2749,10 @@ export class Blackjack {
   hit(
     playerId: string
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -2334,26 +2761,22 @@ export class Blackjack {
       );
     }
 
-
     if (
       !this.canPlayerAct(
         player,
         "hit"
       )
     ) {
-
       return this.fail(
         "hit",
         "It is not this player's turn."
       );
     }
 
-
     const hand =
       this.getActivePlayerHand(
         player
       );
-
 
     if (!hand) {
       return this.fail(
@@ -2362,26 +2785,24 @@ export class Blackjack {
       );
     }
 
-
     const card =
       this.drawCard(
         true
       );
 
-
     hand.cards.push(
       card
     );
 
-
     card.state =
       "dealing";
 
+    card.zIndex =
+      hand.cards.length;
 
     this.updateHandEvaluation(
       hand
     );
-
 
     this.emit(
       "player:action",
@@ -2396,22 +2817,29 @@ export class Blackjack {
           hand.id,
 
         card,
+
+        value:
+          hand.value,
+
+        bust:
+          hand.busted,
       }
     );
-
 
     if (
       hand.busted
     ) {
-
       player.state =
         "busted";
+
+      this.syncPlayerState(
+        player
+      );
 
       this.finishCurrentPlayerTurn(
         player
       );
     }
-
 
     return {
       success:
@@ -2434,12 +2862,10 @@ export class Blackjack {
   stand(
     playerId: string
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -2448,26 +2874,22 @@ export class Blackjack {
       );
     }
 
-
     if (
       !this.canPlayerAct(
         player,
         "stand"
       )
     ) {
-
       return this.fail(
         "stand",
         "It is not this player's turn."
       );
     }
 
-
     const hand =
       this.getActivePlayerHand(
         player
       );
-
 
     if (!hand) {
       return this.fail(
@@ -2476,13 +2898,12 @@ export class Blackjack {
       );
     }
 
-
     hand.state =
       "standing";
 
-    player.state =
-      "standing";
-
+    this.syncPlayerState(
+      player
+    );
 
     this.emit(
       "player:action",
@@ -2495,14 +2916,15 @@ export class Blackjack {
 
         handId:
           hand.id,
+
+        value:
+          hand.value,
       }
     );
-
 
     this.finishCurrentPlayerTurn(
       player
     );
-
 
     return {
       success:
@@ -2523,12 +2945,10 @@ export class Blackjack {
   double(
     playerId: string
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -2537,26 +2957,22 @@ export class Blackjack {
       );
     }
 
-
     if (
       !this.canPlayerAct(
         player,
         "double"
       )
     ) {
-
       return this.fail(
         "double",
         "Double is not available."
       );
     }
 
-
     const hand =
       this.getActivePlayerHand(
         player
       );
-
 
     if (!hand) {
       return this.fail(
@@ -2565,89 +2981,85 @@ export class Blackjack {
       );
     }
 
-
     if (
       hand.cards.length !==
       2
     ) {
-
       return this.fail(
         "double",
         "Double is only available on the first two cards."
       );
     }
 
-
     if (
       hand.bet <=
       0
     ) {
-
       return this.fail(
         "double",
         "No wager."
       );
     }
 
-
     if (
       player.balance <
       hand.bet
     ) {
-
       return this.fail(
         "double",
         "Insufficient balance."
       );
     }
 
-
     if (
-      player.secondaryHand &&
+      this.activeHandIndex ===
+        1 &&
       !this.allowDoubleAfterSplit
     ) {
-
       return this.fail(
         "double",
         "Double after split is disabled."
       );
     }
 
+    const additionalWager =
+      hand.bet;
 
     player.balance -=
-      hand.bet;
+      additionalWager;
 
     hand.bet *=
       2;
 
-    player.bet =
-      hand.bet;
-
+    this.updatePlayerTotalBet(
+      player
+    );
 
     const card =
       this.drawCard(
         true
       );
 
-
     hand.cards.push(
       card
     );
 
+    card.state =
+      "dealing";
+
+    card.zIndex =
+      hand.cards.length;
 
     this.updateHandEvaluation(
       hand
     );
 
-
     if (
       !hand.busted
     ) {
-
       hand.state =
         "standing";
     }
-
 
     this.emit(
       "player:action",
@@ -2662,14 +3074,25 @@ export class Blackjack {
           hand.id,
 
         card,
+
+        wager:
+          hand.bet,
+
+        value:
+          hand.value,
+
+        bust:
+          hand.busted,
       }
     );
 
+    this.syncPlayerState(
+      player
+    );
 
     this.finishCurrentPlayerTurn(
       player
     );
-
 
     return {
       success:
@@ -2692,12 +3115,10 @@ export class Blackjack {
   split(
     playerId: string
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -2706,26 +3127,22 @@ export class Blackjack {
       );
     }
 
-
     if (
       !this.canPlayerAct(
         player,
         "split"
       )
     ) {
-
       return this.fail(
         "split",
         "Split is not available."
       );
     }
 
-
     const hand =
       this.getActivePlayerHand(
         player
       );
-
 
     if (!hand) {
       return this.fail(
@@ -2734,31 +3151,35 @@ export class Blackjack {
       );
     }
 
-
     if (
       hand.cards.length !==
       2
     ) {
-
       return this.fail(
         "split",
         "Split requires exactly two cards."
       );
     }
 
-
     if (
       !this.cardsCanSplit(
         hand.cards
       )
     ) {
-
       return this.fail(
         "split",
         "These cards cannot be split."
       );
     }
 
+    if (
+      player.secondaryHand
+    ) {
+      return this.fail(
+        "split",
+        "Additional split levels are not supported."
+      );
+    }
 
     if (
       this.countPlayerHands(
@@ -2766,67 +3187,59 @@ export class Blackjack {
       ) >=
       this.maxSplitHands
     ) {
-
       return this.fail(
         "split",
         "Maximum split hands reached."
       );
     }
 
-
     if (
       player.balance <
       hand.bet
     ) {
-
       return this.fail(
         "split",
         "Insufficient balance."
       );
     }
 
-
-    if (
-      player.secondaryHand
-    ) {
-
-      return this.fail(
-        "split",
-        "Additional split levels require a larger hand array."
-      );
-    }
-
+    const firstCard =
+      hand.cards.shift();
 
     const secondCard =
-      hand.cards.pop();
+      hand.cards.shift();
 
-
-    if (!secondCard) {
+    if (
+      !firstCard ||
+      !secondCard
+    ) {
       return this.fail(
         "split",
         "Unable to split cards."
       );
     }
 
-
-    player.balance -=
+    const originalBet =
       hand.bet;
 
+    player.balance -=
+      originalBet;
 
     const newHand =
       createHand(
         `hand-${player.seat}-2`
       );
 
-
     newHand.bet =
-      hand.bet;
+      originalBet;
 
+    hand.cards.push(
+      firstCard
+    );
 
     newHand.cards.push(
       secondCard
     );
-
 
     hand.state =
       "playing";
@@ -2834,10 +3247,18 @@ export class Blackjack {
     newHand.state =
       "playing";
 
+    firstCard.state =
+      "hand";
+
+    secondCard.state =
+      "hand";
 
     player.secondaryHand =
       newHand;
 
+    this.updatePlayerTotalBet(
+      player
+    );
 
     const firstAdditional =
       this.drawCard(
@@ -2849,7 +3270,6 @@ export class Blackjack {
         true
       );
 
-
     hand.cards.push(
       firstAdditional
     );
@@ -2858,6 +3278,17 @@ export class Blackjack {
       secondAdditional
     );
 
+    firstAdditional.state =
+      "dealing";
+
+    secondAdditional.state =
+      "dealing";
+
+    firstAdditional.zIndex =
+      hand.cards.length;
+
+    secondAdditional.zIndex =
+      newHand.cards.length;
 
     this.updateHandEvaluation(
       hand
@@ -2867,6 +3298,35 @@ export class Blackjack {
       newHand
     );
 
+    /*
+     * Split aces receive one card each.
+     */
+    const splitAces =
+      firstCard.rank ===
+        "A" &&
+      secondCard.rank ===
+        "A";
+
+    if (
+      splitAces &&
+      this.splitAcesOneCard
+    ) {
+      if (
+        !hand.busted &&
+        !hand.blackjack
+      ) {
+        hand.state =
+          "standing";
+      }
+
+      if (
+        !newHand.busted &&
+        !newHand.blackjack
+      ) {
+        newHand.state =
+          "standing";
+      }
+    }
 
     this.emit(
       "player:action",
@@ -2882,9 +3342,23 @@ export class Blackjack {
 
         createdHand:
           newHand,
+
+        splitAces,
       }
     );
 
+    if (
+      splitAces &&
+      this.splitAcesOneCard
+    ) {
+      this.syncPlayerState(
+        player
+      );
+
+      this.finishCurrentPlayerTurn(
+        player
+      );
+    }
 
     return {
       success:
@@ -2908,12 +3382,10 @@ export class Blackjack {
   surrender(
     playerId: string
   ): ActionResult {
-
     const player =
       this.getPlayer(
         playerId
       );
-
 
     if (!player) {
       return this.fail(
@@ -2921,7 +3393,6 @@ export class Blackjack {
         "Player not found."
       );
     }
-
 
     if (
       !this.allowSurrender
@@ -2932,26 +3403,22 @@ export class Blackjack {
       );
     }
 
-
     if (
       !this.canPlayerAct(
         player,
         "surrender"
       )
     ) {
-
       return this.fail(
         "surrender",
         "Surrender is not available."
       );
     }
 
-
     const hand =
       this.getActivePlayerHand(
         player
       );
-
 
     if (!hand) {
       return this.fail(
@@ -2960,30 +3427,34 @@ export class Blackjack {
       );
     }
 
-
     if (
       hand.cards.length !==
       2
     ) {
-
       return this.fail(
         "surrender",
         "Surrender is only available before drawing another card."
       );
     }
 
+    if (
+      hand.blackjack
+    ) {
+      return this.fail(
+        "surrender",
+        "A blackjack cannot be surrendered."
+      );
+    }
 
     this.surrenderedHands.add(
       hand.id
     );
-
 
     hand.state =
       "loser";
 
     player.state =
       "loser";
-
 
     this.emit(
       "player:action",
@@ -2999,11 +3470,9 @@ export class Blackjack {
       }
     );
 
-
     this.finishCurrentPlayerTurn(
       player
     );
-
 
     return {
       success:
@@ -3025,11 +3494,9 @@ export class Blackjack {
     playerId: string,
     action: GameAction
   ): ActionResult {
-
     switch (
       action
     ) {
-
       case "deal":
         return this.startRound();
 
@@ -3058,53 +3525,48 @@ export class Blackjack {
           playerId
         );
 
+      case "decline-insurance":
+        return this.declineInsurance(
+          playerId
+        );
+
       case "surrender":
         return this.surrender(
           playerId
         );
 
-
       case "repeat-bet": {
-
-        const player =
-          this.getPlayer(
-            playerId
-          );
-
-
-        if (!player) {
-          return this.fail(
-            "repeat-bet",
-            "Player not found."
-          );
-        }
-
-
         const previous =
           this.pendingBets.get(
-            player.id
+            playerId
           ) ??
           0;
 
+        if (
+          previous <
+          this.minimumBet
+        ) {
+          return this.fail(
+            "repeat-bet",
+            "No valid previous bet."
+          );
+        }
 
         return this.setBet(
-          player.id,
+          playerId,
           previous
         );
       }
-
 
       case "clear-bet":
         return this.clearBet(
           playerId
         );
 
-
       case "increase-bet":
         return this.increaseBet(
           playerId
         );
-
 
       case "decrease-bet":
         return this.decreaseBet(
@@ -3115,13 +3577,12 @@ export class Blackjack {
 
 
   /* ==========================================================================
-     NPC DECISION SYSTEM
+     NPC PLAYER DECISION
      ========================================================================== */
 
   private resolveNPCPlayer(
     player: Player
   ) {
-
     if (
       this.phase !==
       "player-turn"
@@ -3129,31 +3590,30 @@ export class Blackjack {
       return;
     }
 
-
     if (
       player.state !==
-      "playing"
+        "playing" &&
+      player.state !==
+        "waiting"
     ) {
       return;
     }
-
 
     const hand =
       this.getActivePlayerHand(
         player
       );
 
-
     if (!hand) {
       return;
     }
 
-
     if (
       hand.blackjack ||
-      hand.busted
+      hand.busted ||
+      hand.state ===
+        "standing"
     ) {
-
       this.finishCurrentPlayerTurn(
         player
       );
@@ -3161,28 +3621,43 @@ export class Blackjack {
       return;
     }
 
-
-    let safety = 0;
-
+    let safety =
+      0;
 
     while (
-      this.handIsPlayable(
-        hand
-      ) &&
+      this.phase ===
+        "player-turn" &&
+      this.activeSeat ===
+        player.seat &&
       safety <
         12
     ) {
-
       safety +=
         1;
 
+      const currentHand =
+        this.getActivePlayerHand(
+          player
+        );
+
+      if (
+        !currentHand ||
+        !this.handIsPlayable(
+          currentHand
+        )
+      ) {
+        this.finishCurrentPlayerTurn(
+          player
+        );
+
+        break;
+      }
 
       const action =
         this.chooseNPCAction(
           player,
-          hand
+          currentHand
         );
-
 
       this.emit(
         "dealer:action",
@@ -3193,55 +3668,58 @@ export class Blackjack {
           playerId:
             player.id,
 
+          handId:
+            currentHand.id,
+
           action,
         }
       );
 
+      let result:
+        ActionResult;
 
       switch (
         action
       ) {
-
         case "hit":
-          this.hit(
-            player.id
-          );
+          result =
+            this.hit(
+              player.id
+            );
           break;
-
 
         case "stand":
-          this.stand(
-            player.id
-          );
+          result =
+            this.stand(
+              player.id
+            );
           break;
-
 
         case "double":
-          this.double(
-            player.id
-          );
+          result =
+            this.double(
+              player.id
+            );
           break;
-
 
         case "split":
-          this.split(
-            player.id
-          );
-          break;
-
-
-        default:
-          this.stand(
-            player.id
-          );
+          result =
+            this.split(
+              player.id
+            );
           break;
       }
 
-
       if (
-        this.activeSeat !==
-        player.seat
+        !result.success
       ) {
+        /*
+         * Prevent NPC deadlocks.
+         */
+        this.stand(
+          player.id
+        );
+
         break;
       }
     }
@@ -3256,36 +3734,34 @@ export class Blackjack {
     | "stand"
     | "double"
     | "split" {
-
     const evaluation =
       this.evaluateHand(
         hand
       );
 
-
     const dealerValue =
       this.getDealerUpcardValue();
 
-
     const behavior =
       player.behavior;
-
 
     /*
      * Split.
      */
     if (
-      hand.cards.length === 2 &&
+      hand.cards.length ===
+        2 &&
+      !player.secondaryHand &&
       this.cardsCanSplit(
         hand.cards
-      )
+      ) &&
+      player.balance >=
+        hand.bet
     ) {
-
       const splitValue =
         getCardValue(
           hand.cards[0].rank
         );
-
 
       if (
         hand.cards[0].rank ===
@@ -3296,29 +3772,34 @@ export class Blackjack {
         return "split";
       }
 
-
       if (
         behavior ===
           "aggressive" &&
         (
-          splitValue === 9 ||
-          splitValue === 7
+          splitValue ===
+            9 ||
+          splitValue ===
+            7
         )
       ) {
         return "split";
       }
     }
 
-
     /*
      * Double.
      */
     if (
-      hand.cards.length === 2 &&
-      hand.bet <=
-        player.balance
+      hand.cards.length ===
+        2 &&
+      player.balance >=
+        hand.bet &&
+      (
+        this.activeHandIndex ===
+          0 ||
+        this.allowDoubleAfterSplit
+      )
     ) {
-
       if (
         evaluation.value ===
           11 &&
@@ -3327,7 +3808,6 @@ export class Blackjack {
       ) {
         return "double";
       }
-
 
       if (
         evaluation.value ===
@@ -3339,8 +3819,20 @@ export class Blackjack {
       ) {
         return "double";
       }
-    }
 
+      if (
+        evaluation.value ===
+          9 &&
+        dealerValue >=
+          3 &&
+        dealerValue <=
+          6 &&
+        behavior ===
+          "aggressive"
+      ) {
+        return "double";
+      }
+    }
 
     /*
      * Soft hand.
@@ -3348,7 +3840,6 @@ export class Blackjack {
     if (
       evaluation.soft
     ) {
-
       if (
         evaluation.value <=
         17
@@ -3356,22 +3847,18 @@ export class Blackjack {
         return "hit";
       }
 
-
       if (
         evaluation.value ===
         18
       ) {
-
         return dealerValue >=
           9
           ? "hit"
           : "stand";
       }
 
-
       return "stand";
     }
-
 
     /*
      * Hard hand.
@@ -3383,7 +3870,6 @@ export class Blackjack {
       return "hit";
     }
 
-
     if (
       evaluation.value >=
       17
@@ -3391,17 +3877,14 @@ export class Blackjack {
       return "stand";
     }
 
-
     switch (
       behavior
     ) {
-
       case "aggressive":
-        return evaluation.value <
-          17
-          ? "hit"
-          : "stand";
-
+        return this.basicStrategyAction(
+          evaluation.value,
+          dealerValue
+        );
 
       case "conservative":
         return evaluation.value >=
@@ -3409,13 +3892,11 @@ export class Blackjack {
           ? "stand"
           : "hit";
 
-
       case "nervous":
         return evaluation.value >=
           14
           ? "stand"
           : "hit";
-
 
       case "casual":
         return evaluation.value >=
@@ -3423,7 +3904,7 @@ export class Blackjack {
           ? "stand"
           : "hit";
 
-
+      case "balanced":
       default:
         return this.basicStrategyAction(
           evaluation.value,
@@ -3439,7 +3920,6 @@ export class Blackjack {
   ):
     | "hit"
     | "stand" {
-
     if (
       playerValue >=
       17
@@ -3447,14 +3927,12 @@ export class Blackjack {
       return "stand";
     }
 
-
     if (
       playerValue <=
       11
     ) {
       return "hit";
     }
-
 
     if (
       playerValue >=
@@ -3465,6 +3943,16 @@ export class Blackjack {
       return "stand";
     }
 
+    if (
+      playerValue ===
+        12 &&
+      dealerValue >=
+        4 &&
+      dealerValue <=
+        6
+    ) {
+      return "stand";
+    }
 
     return "hit";
   }
@@ -3474,72 +3962,109 @@ export class Blackjack {
      DEALER TURN
      ========================================================================== */
 
-  private beginDealerTurn() {
+  private beginDealerTurn(
+    alreadyKnownBlackjack = false
+  ) {
+    if (
+      this.dealerTurnCompleted
+    ) {
+      return;
+    }
 
     this.setRoundState(
       "dealer-turn"
     );
 
-
     this.dealer.state =
       "revealing";
 
+    this.dealer.pose =
+      "reveal";
+
+    this.dealer.attention =
+      "cards";
 
     this.revealDealerHoleCard();
-
 
     this.emit(
       "dealer:turn",
       {
         action:
           "reveal",
+
+        blackjack:
+          alreadyKnownBlackjack ||
+          this.isBlackjack(
+            this.dealer.hand
+          ),
       }
     );
 
+    if (
+      alreadyKnownBlackjack ||
+      this.isBlackjack(
+        this.dealer.hand
+      )
+    ) {
+      this.dealer.state =
+        "settling";
+
+      this.dealerTurnCompleted =
+        true;
+
+      this.setRoundState(
+        "settlement"
+      );
+
+      this.settleRound();
+
+      return;
+    }
 
     this.resolveDealerHand();
   }
 
 
   private resolveDealerHand() {
-
     this.dealer.state =
       "dealing";
 
+    this.dealer.pose =
+      "deal-center";
 
     this.updateHandEvaluation(
       this.dealer.hand
     );
 
-
-    let safety = 0;
-
+    let safety =
+      0;
 
     while (
       this.dealerShouldHit() &&
       safety <
         20
     ) {
-
       safety +=
         1;
-
 
       const card =
         this.drawCard(
           true
         );
 
-
       this.dealer.hand.cards.push(
         card
       );
 
+      card.state =
+        "dealing";
+
+      card.zIndex =
+        this.dealer.hand.cards.length;
 
       this.updateHandEvaluation(
         this.dealer.hand
       );
-
 
       this.emit(
         "dealer:action",
@@ -3551,46 +4076,49 @@ export class Blackjack {
 
           value:
             this.dealer.hand.value,
+
+          soft:
+            this.dealer.hand.soft,
         }
       );
     }
 
+    this.updateHandEvaluation(
+      this.dealer.hand
+    );
 
     this.dealer.state =
-      this.isBust(
-        this.dealer.hand
-      )
+      this.dealer.hand.busted
         ? "settling"
         : "idle";
 
+    this.dealer.pose =
+      this.dealer.hand.busted
+        ? "settle"
+        : "neutral";
 
     this.dealerTurnCompleted =
       true;
 
-
     this.setRoundState(
       "settlement"
     );
-
 
     this.settleRound();
   }
 
 
   private dealerShouldHit() {
-
     const evaluation =
       this.evaluateHand(
         this.dealer.hand
       );
-
 
     if (
       evaluation.bust
     ) {
       return false;
     }
-
 
     if (
       evaluation.value <
@@ -3599,38 +4127,38 @@ export class Blackjack {
       return true;
     }
 
-
     if (
       evaluation.value ===
-        17 &&
+        this.table.dealerStandsOn &&
       evaluation.soft &&
       this.dealerHitsSoft17
     ) {
       return true;
     }
 
-
     return false;
   }
 
 
   private revealDealerHoleCard() {
+    if (
+      this.dealerHoleCardRevealed
+    ) {
+      return;
+    }
 
     const hidden =
       this.dealer.hand.cards.find(
-        (card) =>
+        card =>
           !card.faceUp
       );
 
-
     if (!hidden) {
-
       this.dealerHoleCardRevealed =
         true;
 
       return;
     }
-
 
     hidden.faceUp =
       true;
@@ -3638,15 +4166,12 @@ export class Blackjack {
     hidden.state =
       "revealing";
 
-
     this.dealerHoleCardRevealed =
       true;
-
 
     this.updateHandEvaluation(
       this.dealer.hand
     );
-
 
     this.emit(
       "card:flip",
@@ -3663,44 +4188,50 @@ export class Blackjack {
      ========================================================================== */
 
   settleRound() {
-
     if (
       this.phase !==
       "settlement"
     ) {
+      if (
+        this.phase ===
+          "complete" ||
+        this.phase ===
+          "waiting"
+      ) {
+        return;
+      }
 
       this.setRoundState(
         "settlement"
       );
     }
 
+    if (
+      !this.roundLocked
+    ) {
+      return;
+    }
 
     this.settlements =
       [];
-
 
     const dealerEvaluation =
       this.evaluateHand(
         this.dealer.hand
       );
 
-
     const dealerBlackjack =
       dealerEvaluation.blackjack;
 
+    /*
+     * Only players who actually received cards belong to the round.
+     */
+    const roundPlayers =
+      this.getRoundPlayers();
 
     for (
-      const player of this.players
+      const player of roundPlayers
     ) {
-
-      if (
-        !player.active ||
-        player.eliminated
-      ) {
-        continue;
-      }
-
-
       const hands =
         [
           player.hand,
@@ -3712,18 +4243,15 @@ export class Blackjack {
             Boolean(hand)
         );
 
-
       for (
         const hand of hands
       ) {
-
         if (
           hand.cards.length ===
           0
         ) {
           continue;
         }
-
 
         const settlement =
           this.settleHand(
@@ -3733,12 +4261,10 @@ export class Blackjack {
             dealerBlackjack
           );
 
-
         this.settlements.push(
           settlement
         );
       }
-
 
       const insurance =
         this.insuranceBets.get(
@@ -3746,25 +4272,23 @@ export class Blackjack {
         ) ??
         0;
 
-
       if (
         insurance >
         0
       ) {
-
         if (
           dealerBlackjack
         ) {
-
           const profit =
             insurance *
-            INSURANCE_MULTIPLIER;
+            INSURANCE_PAYOUT_MULTIPLIER;
 
-
-          player.balance +=
+          const payout =
             insurance +
             profit;
 
+          player.balance +=
+            payout;
 
           this.settlements.push(
             {
@@ -3780,9 +4304,7 @@ export class Blackjack {
               wager:
                 insurance,
 
-              payout:
-                insurance +
-                profit,
+              payout,
 
               profit,
 
@@ -3795,9 +4317,7 @@ export class Blackjack {
                 ),
             }
           );
-
         } else {
-
           this.settlements.push(
             {
               playerId:
@@ -3830,19 +4350,21 @@ export class Blackjack {
         }
       }
 
+      player.bet =
+        0;
+
+      player.hand.bet =
+        0;
 
       player.chips =
         createChipStack(
           0
         );
-
-      player.bet =
-        0;
     }
-
 
     this.insuranceBets.clear();
 
+    this.insuranceDecisions.clear();
 
     this.emit(
       "round:settle",
@@ -3852,9 +4374,10 @@ export class Blackjack {
 
         dealerValue:
           dealerEvaluation.value,
+
+        dealerBlackjack,
       }
     );
-
 
     this.finishRound();
   }
@@ -3866,16 +4389,13 @@ export class Blackjack {
     dealerEvaluation: HandEvaluation,
     dealerBlackjack: boolean
   ): Settlement {
-
     const playerEvaluation =
       this.evaluateHand(
         hand
       );
 
-
     const wager =
       hand.bet;
-
 
     /*
      * Surrender.
@@ -3885,15 +4405,18 @@ export class Blackjack {
         hand.id
       )
     ) {
-
       const payout =
         wager *
-        SURRENDER_MULTIPLIER;
-
+        SURRENDER_RETURN_MULTIPLIER;
 
       player.balance +=
         payout;
 
+      player.losses +=
+        1;
+
+      hand.state =
+        "loser";
 
       return {
         playerId:
@@ -3921,13 +4444,17 @@ export class Blackjack {
       };
     }
 
-
     /*
      * Bust.
      */
     if (
       playerEvaluation.bust
     ) {
+      player.losses +=
+        1;
+
+      hand.state =
+        "busted";
 
       return {
         playerId:
@@ -3955,7 +4482,6 @@ export class Blackjack {
       };
     }
 
-
     /*
      * Natural blackjack.
      */
@@ -3963,28 +4489,22 @@ export class Blackjack {
       playerEvaluation.blackjack &&
       !dealerBlackjack
     ) {
-
       const profit =
         wager *
         this.blackjackPayout;
-
 
       const payout =
         wager +
         profit;
 
-
       player.balance +=
         payout;
-
 
       player.wins +=
         1;
 
-
       hand.state =
         "winner";
-
 
       return {
         playerId:
@@ -4010,7 +4530,6 @@ export class Blackjack {
       };
     }
 
-
     /*
      * Both blackjack.
      */
@@ -4018,14 +4537,11 @@ export class Blackjack {
       playerEvaluation.blackjack &&
       dealerBlackjack
     ) {
-
       player.balance +=
         wager;
 
-
       hand.state =
         "push";
-
 
       return {
         playerId:
@@ -4053,21 +4569,17 @@ export class Blackjack {
       };
     }
 
-
     /*
      * Dealer blackjack.
      */
     if (
       dealerBlackjack
     ) {
-
       player.losses +=
         1;
 
-
       hand.state =
         "loser";
-
 
       return {
         playerId:
@@ -4095,29 +4607,24 @@ export class Blackjack {
       };
     }
 
-
     /*
      * Dealer bust.
      */
     if (
       dealerEvaluation.bust
     ) {
-
       const payout =
-        wager * 2;
-
+        wager *
+        2;
 
       player.balance +=
         payout;
 
-
       player.wins +=
         1;
 
-
       hand.state =
         "winner";
-
 
       return {
         playerId:
@@ -4144,30 +4651,25 @@ export class Blackjack {
       };
     }
 
-
     /*
-     * Player wins.
+     * Player higher.
      */
     if (
       playerEvaluation.value >
       dealerEvaluation.value
     ) {
-
       const payout =
-        wager * 2;
-
+        wager *
+        2;
 
       player.balance +=
         payout;
 
-
       player.wins +=
         1;
 
-
       hand.state =
         "winner";
-
 
       return {
         playerId:
@@ -4193,7 +4695,6 @@ export class Blackjack {
           playerEvaluation.value,
       };
     }
-
 
     /*
      * Push.
@@ -4202,14 +4703,11 @@ export class Blackjack {
       playerEvaluation.value ===
       dealerEvaluation.value
     ) {
-
       player.balance +=
         wager;
 
-
       hand.state =
         "push";
-
 
       return {
         playerId:
@@ -4237,17 +4735,14 @@ export class Blackjack {
       };
     }
 
-
     /*
      * Player loses.
      */
     player.losses +=
       1;
 
-
     hand.state =
       "loser";
-
 
     return {
       playerId:
@@ -4281,32 +4776,29 @@ export class Blackjack {
      ========================================================================== */
 
   private finishRound() {
-
-    this.setRoundState(
-      "complete"
-    );
-
-
+    /*
+     * Move player cards to discard.
+     */
     for (
       const player of this.players
     ) {
-
-      for (
-        const hand of [
+      const hands =
+        [
           player.hand,
           player.secondaryHand,
-        ]
+        ].filter(
+          (
+            hand
+          ): hand is Hand =>
+            Boolean(hand)
+        );
+
+      for (
+        const hand of hands
       ) {
-
-        if (!hand) {
-          continue;
-        }
-
-
         for (
           const card of hand.cards
         ) {
-
           this.discardCard(
             card
           );
@@ -4314,19 +4806,22 @@ export class Blackjack {
       }
     }
 
-
+    /*
+     * Move dealer cards to discard.
+     */
     for (
       const card of this.dealer.hand.cards
     ) {
-
       this.discardCard(
         card
       );
     }
 
-
     this.surrenderedHands.clear();
 
+    this.insuranceBets.clear();
+
+    this.insuranceDecisions.clear();
 
     this.activeSeat =
       -1;
@@ -4337,16 +4832,13 @@ export class Blackjack {
     this.roundLocked =
       false;
 
-
     for (
       const player of this.players
     ) {
-
       if (
         player.balance <=
         0
       ) {
-
         player.eliminated =
           true;
 
@@ -4356,14 +4848,41 @@ export class Blackjack {
         player.state =
           "loser";
 
+        player.bet =
+          0;
+
+        player.hand.bet =
+          0;
+
+        player.chips =
+          createChipStack(
+            0
+          );
+
         continue;
       }
 
-
       player.state =
         "waiting";
+
+      player.active =
+        true;
+
+      player.bet =
+        0;
+
+      player.hand.bet =
+        0;
+
+      player.chips =
+        createChipStack(
+          0
+        );
     }
 
+    this.setRoundState(
+      "complete"
+    );
 
     this.emit(
       "round:complete",
@@ -4373,19 +4892,124 @@ export class Blackjack {
 
         settlements:
           this.settlements,
+
+        humanBalance:
+          this.getHumanPlayer()
+            ?.balance ??
+          0,
       }
     );
   }
 
 
   /* ==========================================================================
-     RULE HELPERS
+     PLAYER / HAND STATE
      ========================================================================== */
+
+  private syncPlayerState(
+    player: Player
+  ) {
+    const hands =
+      [
+        player.hand,
+        player.secondaryHand,
+      ].filter(
+        (
+          hand
+        ): hand is Hand =>
+          Boolean(hand)
+      );
+
+    if (
+      hands.some(
+        hand =>
+          hand.state ===
+          "winner"
+      )
+    ) {
+      player.state =
+        "winner";
+
+      return;
+    }
+
+    if (
+      hands.every(
+        hand =>
+          hand.state ===
+            "busted" ||
+          hand.state ===
+            "loser"
+      )
+    ) {
+      player.state =
+        "loser";
+
+      return;
+    }
+
+    if (
+      hands.some(
+        hand =>
+          hand.state ===
+          "blackjack"
+      )
+    ) {
+      player.state =
+        "blackjack";
+
+      return;
+    }
+
+    if (
+      hands.some(
+        hand =>
+          hand.state ===
+          "playing"
+      )
+    ) {
+      player.state =
+        "playing";
+
+      return;
+    }
+
+    if (
+      hands.some(
+        hand =>
+          hand.state ===
+          "standing"
+      )
+    ) {
+      player.state =
+        "standing";
+
+      return;
+    }
+
+    player.state =
+      "waiting";
+  }
+
+
+  private updatePlayerTotalBet(
+    player: Player
+  ) {
+    const total =
+      player.hand.bet +
+      (
+        player.secondaryHand?.bet ??
+        0
+      );
+
+    player.bet =
+      total;
+  }
+
 
   private handIsFinished(
     hand: Hand
   ) {
-
     return (
       hand.busted ||
       hand.blackjack ||
@@ -4404,7 +5028,6 @@ export class Blackjack {
   private handIsPlayable(
     hand: Hand
   ) {
-
     return (
       hand.cards.length >
         0 &&
@@ -4422,47 +5045,151 @@ export class Blackjack {
   }
 
 
-  private mapHandState(
-    hand: Hand
-  ): SeatState {
-
+  private getActivePlayerHand(
+    player: Player
+  ): Hand | null {
     if (
-      hand.blackjack
+      this.activeHandIndex ===
+      0
     ) {
-      return "blackjack";
+      return player.hand;
     }
 
-
     if (
-      hand.busted
+      this.activeHandIndex ===
+        1 &&
+      player.secondaryHand
     ) {
-      return "busted";
+      return player.secondaryHand;
     }
 
-
-    if (
-      hand.state ===
-      "standing"
-    ) {
-      return "standing";
-    }
-
-
-    return "playing";
+    return null;
   }
 
+
+  private countPlayerHands(
+    player: Player
+  ) {
+    return (
+      1 +
+      (
+        player.secondaryHand
+          ? 1
+          : 0
+      )
+    );
+  }
+
+
+  /* ==========================================================================
+     ACTION VALIDATION
+     ========================================================================== */
+
+  private canPlayerAct(
+    player: Player,
+    action: GameAction
+  ) {
+    if (
+      this.phase !==
+      "player-turn"
+    ) {
+      return false;
+    }
+
+    if (
+      player.eliminated ||
+      !player.active
+    ) {
+      return false;
+    }
+
+    if (
+      player.seat !==
+      this.activeSeat
+    ) {
+      return false;
+    }
+
+    const hand =
+      this.getActivePlayerHand(
+        player
+      );
+
+    if (!hand) {
+      return false;
+    }
+
+    if (
+      !this.handIsPlayable(
+        hand
+      )
+    ) {
+      return false;
+    }
+
+    switch (
+      action
+    ) {
+      case "hit":
+      case "stand":
+        return true;
+
+      case "surrender":
+        return (
+          this.allowSurrender &&
+          hand.cards.length ===
+            2 &&
+          !hand.blackjack
+        );
+
+      case "double":
+        return (
+          hand.cards.length ===
+            2 &&
+          player.balance >=
+            hand.bet &&
+          (
+            this.activeHandIndex ===
+              0 ||
+            this.allowDoubleAfterSplit
+          )
+        );
+
+      case "split":
+        return (
+          hand.cards.length ===
+            2 &&
+          this.cardsCanSplit(
+            hand.cards
+          ) &&
+          !player.secondaryHand &&
+          player.balance >=
+            hand.bet &&
+          this.countPlayerHands(
+            player
+          ) <
+            this.maxSplitHands
+        );
+
+      default:
+        return false;
+    }
+  }
+
+
+  /* ==========================================================================
+     SPLIT / DEALER HELPERS
+     ========================================================================== */
 
   private cardsCanSplit(
     cards: Card[]
   ) {
-
     if (
       cards.length !==
       2
     ) {
       return false;
     }
-
 
     return (
       this.splitValue(
@@ -4478,160 +5205,18 @@ export class Blackjack {
   private splitValue(
     card: Card
   ) {
-
     return getCardValue(
       card.rank
     );
   }
 
 
-  private countPlayerHands(
-    player: Player
-  ) {
-
-    return (
-      1 +
-      (
-        player.secondaryHand
-          ? 1
-          : 0
-      )
-    );
-  }
-
-
-  private canPlayerAct(
-    player: Player,
-    action: GameAction
-  ) {
-
-    if (
-      this.phase !==
-      "player-turn"
-    ) {
-      return false;
-    }
-
-
-    if (
-      player.eliminated ||
-      !player.active
-    ) {
-      return false;
-    }
-
-
-    if (
-      player.seat !==
-      this.activeSeat
-    ) {
-      return false;
-    }
-
-
-    const hand =
-      this.getActivePlayerHand(
-        player
-      );
-
-
-    if (!hand) {
-      return false;
-    }
-
-
-    if (
-      !this.handIsPlayable(
-        hand
-      )
-    ) {
-      return false;
-    }
-
-
-    switch (
-      action
-    ) {
-
-      case "hit":
-      case "stand":
-      case "surrender":
-        return true;
-
-
-      case "double":
-        return (
-          hand.cards.length ===
-            2 &&
-          player.balance >=
-            hand.bet &&
-          (
-            !player.secondaryHand ||
-            this.allowDoubleAfterSplit
-          )
-        );
-
-
-      case "split":
-        return (
-          hand.cards.length ===
-            2 &&
-          this.cardsCanSplit(
-            hand.cards
-          ) &&
-          player.balance >=
-            hand.bet &&
-          !player.secondaryHand &&
-          this.countPlayerHands(
-            player
-          ) <
-            this.maxSplitHands
-        );
-
-
-      default:
-        return false;
-    }
-  }
-
-
-  private getActivePlayerHand(
-    player: Player
-  ): Hand | null {
-
-    if (
-      this.activeHandIndex ===
-      0
-    ) {
-      return player.hand;
-    }
-
-
-    if (
-      this.activeHandIndex ===
-        1 &&
-      player.secondaryHand
-    ) {
-      return player.secondaryHand;
-    }
-
-
-    return null;
-  }
-
-
-  /* ==========================================================================
-     DEALER UP CARD
-     ========================================================================== */
-
   private isDealerUpcardAce() {
-
     const visible =
       this.dealer.hand.cards.find(
-        (card) =>
+        card =>
           card.faceUp
       );
-
 
     return (
       visible?.rank ===
@@ -4641,18 +5226,15 @@ export class Blackjack {
 
 
   private getDealerUpcardValue() {
-
     const visible =
       this.dealer.hand.cards.find(
-        (card) =>
+        card =>
           card.faceUp
       );
-
 
     if (!visible) {
       return 10;
     }
-
 
     return Math.min(
       10,
@@ -4670,9 +5252,8 @@ export class Blackjack {
   getPlayer(
     id: string
   ) {
-
     return this.players.find(
-      (player) =>
+      player =>
         player.id ===
         id
     );
@@ -4682,9 +5263,8 @@ export class Blackjack {
   getPlayerBySeat(
     seat: number
   ) {
-
     return this.players.find(
-      (player) =>
+      player =>
         player.seat ===
         seat
     );
@@ -4692,36 +5272,87 @@ export class Blackjack {
 
 
   getHumanPlayer() {
-
     return this.players.find(
-      (player) =>
+      player =>
         player.type ===
         "human"
     );
   }
 
 
+  /*
+   * Public helper retained for compatibility.
+   *
+   * Unlike the old implementation, this does NOT require
+   * bet <= balance because balance may already contain
+   * a deducted wager during a live round.
+   */
   getActivePlayers() {
-
     return this.players.filter(
-      (player) =>
+      player =>
         player.active &&
-        !player.eliminated &&
-        player.bet >=
-          this.minimumBet
+        !player.eliminated
     );
   }
 
 
   /* ==========================================================================
-     UI / VISUAL STATE
+     VISUAL STATE
      ========================================================================== */
 
   getVisualState():
     TableVisualState {
+    const orderedPlayers =
+      [...this.players]
+        .sort(
+          (a, b) =>
+            a.seat -
+            b.seat
+        );
+
+    const seats =
+      orderedPlayers.map(
+        player => ({
+          id:
+            player.seat,
+
+          x:
+            player.visual.position.x,
+
+          y:
+            player.visual.position.y,
+
+          angle:
+            player.visual.rotation,
+
+          radius:
+            0.04,
+
+          occupied:
+            player.active &&
+            !player.eliminated,
+
+          active:
+            player.seat ===
+            this.activeSeat,
+
+          playerId:
+            player.id,
+
+          label:
+            `SEAT ${String(
+              player.seat
+            ).padStart(
+              2,
+              "0"
+            )}`,
+
+          state:
+            player.state,
+        })
+      );
 
     return {
-
       table:
         this.table,
 
@@ -4731,53 +5362,10 @@ export class Blackjack {
       deck:
         this.deck,
 
-      seats:
-        this.players.map(
-          (player) => ({
-
-            id:
-              player.seat,
-
-            x:
-              player.visual
-                .position.x,
-
-            y:
-              player.visual
-                .position.y,
-
-            angle:
-              player.visual
-                .rotation,
-
-            radius:
-              0.04,
-
-            occupied:
-              !player.eliminated,
-
-            active:
-              player.seat ===
-              this.activeSeat,
-
-            playerId:
-              player.id,
-
-            label:
-              `SEAT ${String(
-                player.seat
-              ).padStart(
-                2,
-                "0"
-              )}`,
-
-            state:
-              player.state,
-          })
-        ),
+      seats,
 
       players:
-        this.players,
+        orderedPlayers,
 
       activeSeat:
         this.activeSeat,
@@ -4789,7 +5377,11 @@ export class Blackjack {
 
       bettingOpen:
         this.phase ===
-        "betting",
+          "waiting" ||
+        this.phase ===
+          "betting" ||
+        this.phase ===
+          "complete",
 
       cardsVisible:
         true,
@@ -4807,10 +5399,8 @@ export class Blackjack {
   setRoundState(
     phase: RoundPhase
   ) {
-
     this.phase =
       phase;
-
 
     this.emit(
       "round:phase",
@@ -4822,9 +5412,7 @@ export class Blackjack {
 
 
   getState() {
-
     return {
-
       phase:
         this.phase,
 
@@ -4862,7 +5450,6 @@ export class Blackjack {
     action: GameAction,
     reason: string
   ): ActionResult {
-
     this.emit(
       "error",
       {
@@ -4871,9 +5458,7 @@ export class Blackjack {
       }
     );
 
-
     return {
-
       success:
         false,
 
@@ -4889,9 +5474,7 @@ export class Blackjack {
      ========================================================================== */
 
   serialize() {
-
     return {
-
       table:
         this.table,
 
@@ -4927,6 +5510,37 @@ export class Blackjack {
 
       settlements:
         this.settlements,
+
+      rules:
+        {
+          minimumBet:
+            this.minimumBet,
+
+          maximumBet:
+            this.maximumBet,
+
+          blackjackPayout:
+            this.blackjackPayout,
+
+          dealerStandsOn:
+            this.table
+              .dealerStandsOn,
+
+          dealerHitsSoft17:
+            this.dealerHitsSoft17,
+
+          allowInsurance:
+            this.allowInsurance,
+
+          allowSurrender:
+            this.allowSurrender,
+
+          allowDoubleAfterSplit:
+            this.allowDoubleAfterSplit,
+
+          splitAcesOneCard:
+            this.splitAcesOneCard,
+        },
     };
   }
 
@@ -4936,7 +5550,6 @@ export class Blackjack {
      ========================================================================== */
 
   reset() {
-
     this.phase =
       "waiting";
 
@@ -4949,20 +5562,19 @@ export class Blackjack {
     this.roundNumber =
       0;
 
-
     this.pendingBets.clear();
 
     this.insuranceBets.clear();
 
-    this.surrenderedHands.clear();
+    this.insuranceDecisions.clear();
 
+    this.surrenderedHands.clear();
 
     this.settlements =
       [];
 
     this.discardPile =
       [];
-
 
     this.roundLocked =
       false;
@@ -4973,14 +5585,11 @@ export class Blackjack {
     this.dealerTurnCompleted =
       false;
 
-
     this.resetDealerForRound();
-
 
     for (
       const player of this.players
     ) {
-
       player.balance =
         DEFAULT_BANKROLL;
 
@@ -4996,15 +5605,37 @@ export class Blackjack {
       player.eliminated =
         false;
 
+      player.bet =
+        0;
 
-      this.resetPlayerForRound(
-        player
+      player.hand =
+        createHand(
+          `hand-${player.seat}-1`
+        );
+
+      player.secondaryHand =
+        null;
+
+      player.state =
+        "waiting";
+
+      player.chips =
+        createChipStack(
+          0
+        );
+
+      this.pendingBets.set(
+        player.id,
+        0
+      );
+
+      this.insuranceBets.set(
+        player.id,
+        0
       );
     }
 
-
     this.rebuildShoe();
-
 
     this.emit(
       "round:phase",
@@ -5021,12 +5652,13 @@ export class Blackjack {
      ========================================================================== */
 
   destroy() {
-
     this.listeners.clear();
 
     this.pendingBets.clear();
 
     this.insuranceBets.clear();
+
+    this.insuranceDecisions.clear();
 
     this.surrenderedHands.clear();
 
