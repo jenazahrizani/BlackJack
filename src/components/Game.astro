@@ -1,3 +1,4 @@
+
 <div
   class="casino-shell"
   data-blackjack-game
@@ -11,6 +12,10 @@
       class="game-canvas"
       aria-label="Blackjack casino table"
     ></canvas>
+
+    <!-- =====================================================
+         AMBIENT TABLE LABELS
+         ===================================================== -->
 
     <div
       class="ambient-info ambient-info--left"
@@ -26,6 +31,10 @@
       <span>BLACKJACK 21</span>
     </div>
 
+    <!-- =====================================================
+         PLAYER FOREGROUND
+         ===================================================== -->
+
     <div
       class="player-foreground"
       aria-hidden="true"
@@ -35,65 +44,54 @@
       <div class="player-seat-shadow"></div>
     </div>
 
-    <section
-      id="game-info"
-      class="game-info"
-      aria-label="Current blackjack status"
-    >
-      <div class="game-info-row">
-        <span class="game-info-label">BANK</span>
-        <strong id="bankroll-value">$0</strong>
-      </div>
-
-      <div class="game-info-row">
-        <span class="game-info-label">BET</span>
-        <strong id="bet-value">$0</strong>
-      </div>
-
-      <div
-        id="hand-value"
-        class="game-info-value"
-        aria-live="polite"
-      >
-        —
-      </div>
-    </section>
+    <!-- =====================================================
+         ROUND STATUS
+         ===================================================== -->
 
     <div
       id="round-status"
       class="round-status"
       aria-live="polite"
     >
-      PLACE YOUR BET
+      YOUR BET
     </div>
+
+    <!-- =====================================================
+         BET CONTROLS
+         =====================================================
+
+         IMPORTANT:
+         Bet amount is intentionally NOT displayed.
+         Only +/- controls remain.
+         ===================================================== -->
 
     <div
       id="bet-controls"
       class="bet-controls"
-      aria-label="Betting controls"
+      aria-label="Bet controls"
     >
       <button
         type="button"
         class="table-button table-button--bet"
         data-action="decrease-bet"
-        aria-label="Decrease bet by 5"
+        aria-label="Decrease bet"
       >
         −
       </button>
-
-      <div class="bet-amount">
-        <span id="bet-display">$0</span>
-      </div>
 
       <button
         type="button"
         class="table-button table-button--bet"
         data-action="increase-bet"
-        aria-label="Increase bet by 5"
+        aria-label="Increase bet"
       >
         +
       </button>
     </div>
+
+    <!-- =====================================================
+         COMPLETE BLACKJACK ACTIONS
+         ===================================================== -->
 
     <div
       id="action-controls"
@@ -102,7 +100,7 @@
     >
       <button
         type="button"
-        class="table-button"
+        class="table-button table-button--deal"
         data-action="deal"
         data-visible-phase="betting"
       >
@@ -173,14 +171,9 @@
       </button>
     </div>
 
-    <div
-      class="table-atmosphere-mark"
-      aria-hidden="true"
-    >
-      <span>DEALER STANDS ON 17</span>
-      <i></i>
-      <span>BLACKJACK PAYS 3 : 2</span>
-    </div>
+    <!-- =====================================================
+         ATMOSPHERE
+         ===================================================== -->
 
     <div
       class="scene-vignette"
@@ -192,6 +185,10 @@
       aria-hidden="true"
     ></div>
   </main>
+
+  <!-- =======================================================
+       LOADING SCREEN
+       ======================================================= -->
 
   <div
     id="loading-screen"
@@ -214,6 +211,10 @@
       <div class="loading-bar-fill"></div>
     </div>
   </div>
+
+  <!-- =======================================================
+       ERROR
+       ======================================================= -->
 
   <div
     id="game-error"
@@ -243,6 +244,10 @@
 
 <script>
   import { Game } from "../game/Game";
+
+  /* =========================================================
+     TYPES
+     ========================================================= */
 
   type Action =
     | "deal"
@@ -280,7 +285,7 @@
   }
 
   /* =========================================================
-     GAME
+     GAME STATE
      ========================================================= */
 
   let game:
@@ -297,7 +302,7 @@
     false;
 
   /* =========================================================
-     DOM
+     DOM QUERY
      ========================================================= */
 
   const query =
@@ -333,26 +338,6 @@
       "#game-error-reload"
     );
 
-  const bankrollValue =
-    query<HTMLElement>(
-      "#bankroll-value"
-    );
-
-  const betValue =
-    query<HTMLElement>(
-      "#bet-value"
-    );
-
-  const betDisplay =
-    query<HTMLElement>(
-      "#bet-display"
-    );
-
-  const handValue =
-    query<HTMLElement>(
-      "#hand-value"
-    );
-
   const roundStatus =
     query<HTMLElement>(
       "#round-status"
@@ -379,26 +364,6 @@
      HELPERS
      ========================================================= */
 
-  const money =
-    (
-      value: number
-    ): string => {
-
-      const safe =
-        Number.isFinite(
-          value
-        )
-          ? value
-          : 0;
-
-      return `$${Math.max(
-        0,
-        Math.floor(
-          safe
-        )
-      )}`;
-    };
-
   const safeLog =
     (
       label: string,
@@ -411,7 +376,7 @@
           value
         );
       } catch {
-        /* logging must never crash the game */
+        /* Never allow logging to break the table. */
       }
     };
 
@@ -470,6 +435,7 @@
       try {
         return game.isTableAvailable();
       } catch (error) {
+
         safeLog(
           "[BLACKJACK] Table availability check failed.",
           error
@@ -480,7 +446,7 @@
     };
 
   /* =========================================================
-     HAND RULES
+     DOUBLE
      ========================================================= */
 
   const canDouble =
@@ -527,6 +493,10 @@
         hand.bet
       );
     };
+
+  /* =========================================================
+     SPLIT
+     ========================================================= */
 
   const canSplit =
     (): boolean => {
@@ -598,6 +568,10 @@
         second.value
       );
     };
+
+  /* =========================================================
+     SURRENDER
+     ========================================================= */
 
   const canSurrender =
     (): boolean => {
@@ -723,7 +697,7 @@
     };
 
   /* =========================================================
-     FATAL ERROR
+     ERROR
      ========================================================= */
 
   const formatError =
@@ -846,7 +820,7 @@
     };
 
   /* =========================================================
-     UI
+     UI UPDATE
      ========================================================= */
 
   const updateGameUI =
@@ -869,34 +843,6 @@
         ) {
           roundStatus.textContent =
             "TABLE READY";
-        }
-
-        if (
-          bankrollValue
-        ) {
-          bankrollValue.textContent =
-            "$0";
-        }
-
-        if (
-          betValue
-        ) {
-          betValue.textContent =
-            "$0";
-        }
-
-        if (
-          betDisplay
-        ) {
-          betDisplay.textContent =
-            "$0";
-        }
-
-        if (
-          handValue
-        ) {
-          handValue.textContent =
-            "—";
         }
 
         setHidden(
@@ -932,79 +878,12 @@
           ? player.bet
           : 0;
 
-      /*
-       * MONEY
-       */
-
-      if (
-        bankrollValue
-      ) {
-        bankrollValue.textContent =
-          money(
-            balance
-          );
-      }
-
-      if (
-        betValue
-      ) {
-        betValue.textContent =
-          money(
-            bet
-          );
-      }
-
-      if (
-        betDisplay
-      ) {
-        betDisplay.textContent =
-          money(
-            bet
-          );
-      }
-
-      /*
-       * HAND VALUE
-       */
-
-      if (
-        handValue
-      ) {
-
-        const shouldShow =
-          phase ===
-            "player-turn" ||
-          phase ===
-            "dealer-turn" ||
-          phase ===
-            "settlement" ||
-          phase ===
-            "complete";
-
-        if (
-          shouldShow &&
-          hand &&
-          hand.cards.length > 0
-        ) {
-
-          handValue.textContent =
-            String(
-              hand.value
-            );
-
-        } else {
-
-          handValue.textContent =
-            "—";
-        }
-      }
-
-      /*
-       * STATUS
-       */
+      /* =====================================================
+         STATUS
+         ===================================================== */
 
       let status =
-        "PLACE YOUR BET";
+        "";
 
       switch (
         phase
@@ -1016,8 +895,8 @@
           status =
             bet >=
             game.blackjack.minimumBet
-              ? "READY TO DEAL"
-              : "PLACE YOUR BET";
+              ? ""
+              : "";
 
           break;
 
@@ -1031,7 +910,7 @@
         case "insurance":
 
           status =
-            "INSURANCE?";
+            "INSURANCE";
 
           break;
 
@@ -1040,7 +919,7 @@
           status =
             game.blackjack.activeSeat ===
             player.seat
-              ? "YOUR TURN"
+              ? ""
               : "OTHER PLAYERS";
 
           break;
@@ -1069,7 +948,7 @@
         default:
 
           status =
-            "PLACE YOUR BET";
+            "";
       }
 
       if (
@@ -1079,9 +958,9 @@
           status;
       }
 
-      /*
-       * BETTING
-       */
+      /* =====================================================
+         BET BUTTONS
+         ===================================================== */
 
       const bettingVisible =
         phase ===
@@ -1102,9 +981,9 @@
         )
       );
 
-      /*
-       * ACTIONS
-       */
+      /* =====================================================
+         ALL ACTION BUTTONS
+         ===================================================== */
 
       for (
         const button of
@@ -1117,9 +996,6 @@
         if (!action) {
           continue;
         }
-
-        const visiblePhase =
-          button.dataset.visiblePhase;
 
         let visible =
           false;
@@ -1195,8 +1071,7 @@
           default:
 
             visible =
-              visiblePhase ===
-              phase;
+              false;
         }
 
         button.classList.toggle(
@@ -1208,19 +1083,15 @@
           !visible;
       }
 
-      /*
-       * BET BUTTONS
-       */
+      /* =====================================================
+         BET STATE
+         ===================================================== */
 
       const minimumBet =
         game.blackjack.minimumBet;
 
       const maximumBet =
         game.blackjack.maximumBet;
-
-      const canAffordMinimum =
-        balance >=
-        minimumBet;
 
       const increaseButton =
         actionButtons.find(
@@ -1248,7 +1119,8 @@
           !(
             bettingVisible &&
             tableReady &&
-            canAffordMinimum &&
+            balance >=
+              minimumBet &&
             balance > 0 &&
             bet <
               Math.min(
@@ -1270,9 +1142,9 @@
           );
       }
 
-      /*
-       * DEAL
-       */
+      /* =====================================================
+         DEAL
+         ===================================================== */
 
       const dealButton =
         actionButtons.find(
@@ -1291,15 +1163,16 @@
           !(
             bettingVisible &&
             tableReady &&
-            canAffordMinimum &&
+            balance >=
+              minimumBet &&
             bet >=
               minimumBet
           );
       }
 
-      /*
-       * ACTION CONTAINER
-       */
+      /* =====================================================
+         CONTAINER VISIBILITY
+         ===================================================== */
 
       const anyVisibleAction =
         actionButtons.some(
@@ -1318,7 +1191,7 @@
     };
 
   /* =========================================================
-     ACTIONS
+     ACTION EXECUTION
      ========================================================= */
 
   const executeAction =
@@ -1380,12 +1253,10 @@
             break;
         }
 
-      } catch (error) {
+      } catch (
+        error
+      ) {
 
-        /*
-         * An action failure must not destroy
-         * the entire table.
-         */
         safeLog(
           `[BLACKJACK ACTION ERROR] ${action}`,
           error
@@ -1403,7 +1274,9 @@
 
       try {
         updateGameUI();
-      } catch (error) {
+      } catch (
+        error
+      ) {
 
         safeLog(
           "[BLACKJACK] UI refresh after action failed.",
@@ -1455,7 +1328,9 @@
 
         try {
           unsubscribe();
-        } catch (error) {
+        } catch (
+          error
+        ) {
 
           safeLog(
             "[BLACKJACK] Engine unsubscribe failed.",
@@ -1495,7 +1370,9 @@
 
               try {
                 updateGameUI();
-              } catch (error) {
+              } catch (
+                error
+              ) {
 
                 safeLog(
                   `[BLACKJACK UI UPDATE ERROR] ${eventName}`,
@@ -1509,6 +1386,7 @@
           typeof unsubscribe ===
           "function"
         ) {
+
           engineUnsubscribers.push(
             unsubscribe
           );
@@ -1517,13 +1395,16 @@
     };
 
   /* =========================================================
-     BUTTONS
+     BUTTON LISTENERS
      ========================================================= */
 
   const buttonHandlers:
     Array<{
-      button: HTMLButtonElement;
-      handler: () => void;
+      button:
+        HTMLButtonElement;
+
+      handler:
+        () => void;
     }> = [];
 
   for (
@@ -1543,6 +1424,7 @@
 
     const handler =
       (): void => {
+
         executeAction(
           action
         );
@@ -1574,7 +1456,9 @@
 
       try {
         updateGameUI();
-      } catch (error) {
+      } catch (
+        error
+      ) {
 
         safeLog(
           "[BLACKJACK] Global action refresh failed.",
@@ -1603,7 +1487,9 @@
 
       try {
         updateGameUI();
-      } catch (error) {
+      } catch (
+        error
+      ) {
 
         safeLog(
           "[BLACKJACK] Visual event refresh failed.",
@@ -1616,20 +1502,10 @@
      GLOBAL ERROR LOGGING
      ========================================================= */
 
-  /*
-   * IMPORTANT:
-   *
-   * Global browser errors are LOGGED only.
-   *
-   * They no longer force TABLE ERROR.
-   *
-   * The initialization try/catch below is the
-   * authoritative startup error boundary.
-   */
-
   const globalErrorHandler =
     (
-      event: ErrorEvent
+      event:
+        ErrorEvent
     ): void => {
 
       safeLog(
@@ -1637,12 +1513,16 @@
         {
           message:
             event.message,
+
           filename:
             event.filename,
+
           line:
             event.lineno,
+
           column:
             event.colno,
+
           error:
             event.error,
         }
@@ -1651,7 +1531,8 @@
 
   const unhandledRejectionHandler =
     (
-      event: PromiseRejectionEvent
+      event:
+        PromiseRejectionEvent
     ): void => {
 
       safeLog(
@@ -1661,7 +1542,7 @@
     };
 
   /* =========================================================
-     EVENTS
+     GLOBAL EVENT REGISTRATION
      ========================================================= */
 
   window.addEventListener(
@@ -1736,12 +1617,14 @@
     ) {
 
       try {
+
         item.button.removeEventListener(
           "click",
           item.handler
         );
+
       } catch {
-        /* ignore cleanup failure */
+        /* Ignore cleanup failure. */
       }
     }
 
@@ -1777,8 +1660,12 @@
     }
 
     try {
+
       game?.destroy();
-    } catch (error) {
+
+    } catch (
+      error
+    ) {
 
       safeLog(
         "[BLACKJACK] Game cleanup failed.",
@@ -1820,19 +1707,18 @@
       );
 
       /*
-       * Remove old game instance.
+       * Destroy previous instance.
        */
+
       if (
         game
       ) {
 
-        console.info(
-          "[BLACKJACK] Destroying previous game instance."
-        );
-
         try {
           game.destroy();
-        } catch (error) {
+        } catch (
+          error
+        ) {
 
           safeLog(
             "[BLACKJACK] Previous game cleanup failed.",
@@ -1848,11 +1734,13 @@
       exposeDebugGame();
 
       /*
-       * Canvas.
+       * Validate canvas.
        */
+
       if (
         !canvas
       ) {
+
         throw new Error(
           "Game canvas was not found."
         );
@@ -1861,87 +1749,35 @@
       if (
         !(canvas instanceof HTMLCanvasElement)
       ) {
+
         throw new Error(
           "Game canvas is not an HTMLCanvasElement."
         );
       }
 
-      const rect =
-        canvas.getBoundingClientRect();
-
-      console.info(
-        "[BLACKJACK] Canvas validated.",
-        {
-          width:
-            rect.width,
-          height:
-            rect.height,
-        }
-      );
-
       /*
-       * Zero size is a warning, not fatal.
+       * Create game.
        */
-      if (
-        rect.width <= 0 ||
-        rect.height <= 0
-      ) {
-
-        console.warn(
-          "[BLACKJACK] Canvas has zero size during initialization."
-        );
-      }
-
-      /*
-       * Create Game.
-       *
-       * Game.ts itself already owns:
-       *   - Renderer
-       *   - Animation
-       *   - Input
-       *   - Resize
-       *   - Main loop
-       *   - Intro
-       */
-      console.info(
-        "[BLACKJACK] Creating Game..."
-      );
 
       game =
         new Game(
           canvas
         );
 
-      console.info(
-        "[BLACKJACK] Game created successfully."
-      );
-
       exposeDebugGame();
 
       /*
-       * Subscribe.
+       * Subscribe to engine.
        */
-      subscribeToEngine();
 
-      console.info(
-        "[BLACKJACK] Engine subscriptions ready."
-      );
+      subscribeToEngine();
 
       /*
        * Initial UI.
        */
+
       updateGameUI();
 
-      console.info(
-        "[BLACKJACK] Initial UI sync complete."
-      );
-
-      /*
-       * IMPORTANT:
-       *
-       * If Game creation and UI synchronization
-       * succeeded, initialization is successful.
-       */
       clearFatalError();
 
       console.info(
@@ -1949,9 +1785,9 @@
       );
 
       /*
-       * Finish loading overlay after the
-       * first visual intro window.
+       * Finish loading.
        */
+
       window.setTimeout(
         () => {
 
@@ -1967,7 +1803,9 @@
 
           try {
             updateGameUI();
-          } catch (error) {
+          } catch (
+            error
+          ) {
 
             safeLog(
               "[BLACKJACK] Final UI refresh failed.",
@@ -1979,7 +1817,9 @@
         950
       );
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       safeLog(
         "[BLACKJACK] INITIALIZATION FAILED",
@@ -1990,7 +1830,9 @@
 
       try {
         game?.destroy();
-      } catch (destroyError) {
+      } catch (
+        destroyError
+      ) {
 
         safeLog(
           "[BLACKJACK] Failed to destroy broken Game instance.",
@@ -2034,61 +1876,125 @@
 </script>
 
 <style>
+  /* =========================================================
+     THEME
+     ========================================================= */
+
   :global(:root) {
-    --black: #020403;
-    --black-deep: #010201;
-    --green-deep: #051b15;
-    --green: #0b392b;
-    --green-light: #124838;
-    --gold-dark: #72582b;
-    --gold: #c5a35c;
-    --gold-bright: #e1c777;
-    --ivory: #e7e1d3;
-    --muted: rgba(231, 225, 211, 0.36);
-    --pixel-border: rgba(197, 163, 92, 0.20);
+    --black:
+      #020403;
+
+    --black-deep:
+      #010201;
+
+    --green-deep:
+      #04160f;
+
+    --green:
+      #07271c;
+
+    --green-mid:
+      #0b3828;
+
+    --green-light:
+      #124a35;
+
+    --gold-dark:
+      #72572a;
+
+    --gold:
+      #c5a35c;
+
+    --gold-bright:
+      #e1c777;
+
+    --ivory:
+      #e7e1d3;
+
+    --ivory-bright:
+      #f2ead6;
+
+    --muted:
+      rgba(
+        231,
+        225,
+        211,
+        0.42
+      );
   }
 
+  /* =========================================================
+     GLOBAL
+     ========================================================= */
+
   :global([hidden]) {
-    display: none !important;
+    display:
+      none !important;
   }
 
   .casino-shell {
     position: fixed;
+
     inset: 0;
 
     width: 100vw;
     height: 100vh;
 
-    min-width: 320px;
-    min-height: 100dvh;
+    min-width:
+      320px;
 
-    overflow: hidden;
+    min-height:
+      100dvh;
 
-    background: var(--black);
-    color: var(--ivory);
+    overflow:
+      hidden;
+
+    background:
+      var(--black);
+
+    color:
+      var(--ivory);
 
     font-family:
       "Courier New",
       Courier,
       monospace;
 
-    isolation: isolate;
-    user-select: none;
-    touch-action: none;
+    isolation:
+      isolate;
 
-    -webkit-font-smoothing: none;
+    user-select:
+      none;
 
-    image-rendering: pixelated;
+    touch-action:
+      none;
+
+    -webkit-font-smoothing:
+      none;
+
+    image-rendering:
+      pixelated;
   }
 
+  /* =========================================================
+     GAME STAGE
+     ========================================================= */
+
   .game-stage {
-    position: absolute;
-    inset: 0;
+    position:
+      absolute;
 
-    width: 100%;
-    height: 100%;
+    inset:
+      0;
 
-    overflow: hidden;
+    width:
+      100%;
+
+    height:
+      100%;
+
+    overflow:
+      hidden;
 
     background:
       linear-gradient(
@@ -2099,46 +2005,75 @@
   }
 
   .game-canvas {
-    position: absolute;
-    inset: 0;
+    position:
+      absolute;
 
-    width: 100%;
-    height: 100%;
+    inset:
+      0;
 
-    display: block;
+    display:
+      block;
 
-    border: 0;
-    outline: 0;
+    width:
+      100%;
 
-    background: #020403;
+    height:
+      100%;
 
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
+    border:
+      0;
+
+    outline:
+      0;
+
+    background:
+      #020403;
+
+    image-rendering:
+      pixelated;
+
+    image-rendering:
+      crisp-edges;
   }
 
+  /* =========================================================
+     AMBIENT INFO
+     ========================================================= */
+
   .ambient-info {
-    position: absolute;
+    position:
+      absolute;
 
-    top: 19px;
+    top:
+      18px;
 
-    z-index: 70;
+    z-index:
+      70;
 
-    pointer-events: none;
+    pointer-events:
+      none;
 
-    opacity: 0.52;
+    opacity:
+      0.58;
 
-    font-size: 7px;
-    line-height: 1;
-    letter-spacing: 2px;
+    font-size:
+      8px;
 
-    text-transform: uppercase;
+    line-height:
+      1;
+
+    letter-spacing:
+      2px;
+
+    text-transform:
+      uppercase;
 
     color:
       rgba(
         231,
         225,
         211,
-        0.34
+        0.46
       );
 
     text-shadow:
@@ -2147,45 +2082,64 @@
         0,
         0,
         0,
-        0.85
+        0.9
       );
   }
 
   .ambient-info--left {
-    left: 21px;
+    left:
+      20px;
   }
 
   .ambient-info--right {
-    right: 21px;
+    right:
+      20px;
 
     color:
       rgba(
-        197,
-        163,
-        92,
-        0.38
+        225,
+        199,
+        119,
+        0.46
       );
   }
 
+  /* =========================================================
+     PLAYER FOREGROUND
+     ========================================================= */
+
   .player-foreground {
-    position: absolute;
+    position:
+      absolute;
 
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left:
+      0;
 
-    z-index: 60;
+    right:
+      0;
 
-    height: 19%;
+    bottom:
+      0;
 
-    pointer-events: none;
+    z-index:
+      60;
+
+    height:
+      19%;
+
+    pointer-events:
+      none;
   }
 
   .player-seat-shadow {
-    position: absolute;
+    position:
+      absolute;
 
-    left: 50%;
-    bottom: -22px;
+    left:
+      50%;
+
+    bottom:
+      -22px;
 
     width:
       min(
@@ -2193,7 +2147,8 @@
         74vw
       );
 
-    height: 110px;
+    height:
+      110px;
 
     transform:
       translateX(-50%);
@@ -2208,7 +2163,7 @@
           0,
           0,
           0,
-          0.44
+          0.48
         ),
         rgba(
           0,
@@ -2219,13 +2174,16 @@
         72%
       );
 
-    opacity: 0.54;
+    opacity:
+      0.54;
   }
 
   .player-forearm {
-    position: absolute;
+    position:
+      absolute;
 
-    bottom: -15px;
+    bottom:
+      -15px;
 
     width:
       clamp(
@@ -2258,7 +2216,8 @@
         )
       );
 
-    opacity: 0.24;
+    opacity:
+      0.24;
 
     filter:
       blur(
@@ -2267,7 +2226,8 @@
   }
 
   .player-forearm--left {
-    left: -40px;
+    left:
+      -40px;
 
     transform:
       rotate(
@@ -2287,7 +2247,8 @@
   }
 
   .player-forearm--right {
-    right: -40px;
+    right:
+      -40px;
 
     transform:
       rotate(
@@ -2306,96 +2267,22 @@
       );
   }
 
-  .game-info {
-    position: absolute;
-
-    left: 22px;
-    bottom: 108px;
-
-    z-index: 80;
-
-    display: flex;
-
-    flex-direction: column;
-
-    gap: 3px;
-
-    pointer-events: none;
-
-    min-width: 72px;
-
-    opacity: 0.78;
-
-    text-shadow:
-      1px 1px 0
-      rgba(
-        0,
-        0,
-        0,
-        0.90
-      );
-  }
-
-  .game-info-row {
-    display: flex;
-
-    align-items: baseline;
-
-    justify-content: space-between;
-
-    gap: 12px;
-
-    font-size: 6px;
-    line-height: 1;
-    letter-spacing: 1.2px;
-  }
-
-  .game-info-label {
-    color:
-      rgba(
-        197,
-        163,
-        92,
-        0.44
-      );
-  }
-
-  .game-info-row strong {
-    color:
-      rgba(
-        231,
-        225,
-        211,
-        0.72
-      );
-
-    font-weight: 700;
-  }
-
-  .game-info-value {
-    margin-top: 3px;
-
-    font-size: 14px;
-    line-height: 1;
-
-    text-align: left;
-
-    color:
-      rgba(
-        231,
-        225,
-        211,
-        0.80
-      );
-  }
+  /* =========================================================
+     ROUND STATUS
+     ========================================================= */
 
   .round-status {
-    position: absolute;
+    position:
+      absolute;
 
-    top: 53%;
-    left: 50%;
+    top:
+      53%;
 
-    z-index: 82;
+    left:
+      50%;
+
+    z-index:
+      82;
 
     transform:
       translate(
@@ -2403,130 +2290,14 @@
         -50%
       );
 
-    pointer-events: none;
+    pointer-events:
+      none;
 
-    white-space: nowrap;
+    min-width:
+      max-content;
 
-    font-size: 6px;
-    line-height: 1;
-    letter-spacing: 2px;
-
-    color:
-      rgba(
-        231,
-        209,
-        142,
-        0.66
-      );
-
-    text-shadow:
-      1px 1px 0
-      rgba(
-        0,
-        0,
-        0,
-        0.92
-      );
-  }
-
-  .bet-controls {
-    position: absolute;
-
-    left: 50%;
-    bottom: 8.8%;
-
-    z-index: 84;
-
-    transform:
-      translateX(-50%);
-
-    display: flex;
-
-    align-items: center;
-    justify-content: center;
-
-    gap: 8px;
-
-    opacity: 0.78;
-  }
-
-  .bet-amount {
-    min-width: 62px;
-
-    padding: 5px 8px;
-
-    border-top:
-      1px solid
-      rgba(
-        197,
-        163,
-        92,
-        0.12
-      );
-
-    border-bottom:
-      1px solid
-      rgba(
-        197,
-        163,
-        92,
-        0.12
-      );
-
-    text-align: center;
-
-    color:
-      rgba(
-        231,
-        225,
-        211,
-        0.68
-      );
-
-    font-size: 7px;
-    line-height: 1;
-    letter-spacing: 1.5px;
-
-    background:
-      rgba(
-        2,
-        5,
-        4,
-        0.24
-      );
-  }
-
-  .action-controls {
-    position: absolute;
-
-    left: 50%;
-    bottom: 2.5%;
-
-    z-index: 85;
-
-    transform:
-      translateX(-50%);
-
-    display: flex;
-
-    align-items: center;
-    justify-content: center;
-
-    gap: 5px;
-
-    max-width:
-      calc(
-        100vw - 24px
-      );
-
-    pointer-events: auto;
-  }
-
-  .table-button {
-    min-width: 48px;
-    height: 23px;
-
-    padding: 0 8px;
+    padding:
+      8px 14px;
 
     border:
       1px solid
@@ -2534,185 +2305,38 @@
         197,
         163,
         92,
-        0.18
+        0.10
       );
-
-    outline: none;
 
     background:
       rgba(
-        3,
-        7,
+        1,
         5,
-        0.62
-      );
-
-    color:
-      rgba(
-        231,
-        225,
-        211,
-        0.70
-      );
-
-    font:
-      700 6px
-      "Courier New",
-      monospace;
-
-    letter-spacing: 1.3px;
-
-    text-transform: uppercase;
-
-    cursor: pointer;
-
-    transition:
-      background 90ms steps(2, end),
-      border-color 90ms steps(2, end),
-      color 90ms steps(2, end),
-      transform 90ms steps(2, end);
-  }
-
-  .table-button:hover:not(:disabled) {
-    border-color:
-      rgba(
-        225,
-        199,
-        119,
-        0.48
-      );
-
-    background:
-      rgba(
-        19,
-        42,
-        32,
-        0.74
-      );
-
-    color:
-      rgba(
-        231,
-        209,
-        142,
-        0.90
-      );
-  }
-
-  .table-button:active:not(:disabled) {
-    transform:
-      translateY(
-        1px
-      );
-  }
-
-  .table-button:focus-visible {
-    border-color:
-      rgba(
-        231,
-        209,
-        142,
-        0.68
-      );
-
-    box-shadow:
-      0 0 0 1px
-      rgba(
-        231,
-        209,
-        142,
-        0.18
-      );
-  }
-
-  .table-button:disabled {
-    opacity: 0.24;
-    cursor: default;
-  }
-
-  .table-button--bet {
-    min-width: 22px;
-    width: 22px;
-
-    padding: 0;
-
-    font-size: 9px;
-  }
-
-  .table-button--danger {
-    border-color:
-      rgba(
-        138,
-        39,
-        44,
+        3,
         0.24
       );
 
-    color:
-      rgba(
-        210,
-        151,
-        148,
-        0.70
-      );
-  }
+    white-space:
+      nowrap;
 
-  .table-button--danger:hover:not(:disabled) {
-    border-color:
-      rgba(
-        163,
-        62,
-        66,
-        0.52
-      );
+    font-size:
+      9px;
 
-    background:
-      rgba(
-        70,
-        17,
-        21,
-        0.58
-      );
-  }
+    line-height:
+      1;
 
-  .is-hidden {
-    display: none !important;
-  }
+    font-weight:
+      700;
 
-  .table-atmosphere-mark {
-    position: absolute;
-
-    left: 50%;
-    bottom: 7.4%;
-
-    z-index: 80;
-
-    transform:
-      translateX(-50%);
-
-    display: flex;
-
-    align-items: center;
-    justify-content: center;
-
-    gap: 10px;
-
-    pointer-events: none;
-
-    opacity: 0.33;
-
-    white-space: nowrap;
-
-    font-size: 6px;
-    line-height: 1;
-    letter-spacing: 1.35px;
+    letter-spacing:
+      2.8px;
 
     color:
       rgba(
         231,
-        225,
-        211,
-        0.52
+        209,
+        142,
+        0.80
       );
 
     text-shadow:
@@ -2721,38 +2345,491 @@
         0,
         0,
         0,
-        0.82
+        0.95
       );
   }
 
-  .table-atmosphere-mark i {
-    width: 2px;
-    height: 2px;
+  /* =========================================================
+     BET CONTROLS
+     ========================================================= */
 
-    display: block;
+  .bet-controls {
+    position:
+      absolute;
+
+    left:
+      50%;
+
+    bottom:
+      11%;
+
+    z-index:
+      84;
+
+    transform:
+      translateX(-50%);
+
+    display:
+      flex;
+
+    align-items:
+      center;
+
+    justify-content:
+      center;
+
+    gap:
+      12px;
+
+    pointer-events:
+      auto;
+  }
+
+  /* =========================================================
+     ACTION CONTROLS
+     ========================================================= */
+
+  .action-controls {
+    position:
+      absolute;
+
+    left:
+      50%;
+
+    bottom:
+      2.4%;
+
+    z-index:
+      85;
+
+    transform:
+      translateX(-50%);
+
+    display:
+      flex;
+
+    align-items:
+      center;
+
+    justify-content:
+      center;
+
+    flex-wrap:
+      wrap;
+
+    gap:
+      8px;
+
+    width:
+      min(
+        980px,
+        calc(100vw - 28px)
+      );
+
+    pointer-events:
+      auto;
+  }
+
+  /* =========================================================
+     PIXEL BUTTON
+     ========================================================= */
+
+  .table-button {
+    appearance:
+      none;
+
+    position:
+      relative;
+
+    display:
+      inline-flex;
+
+    align-items:
+      center;
+
+    justify-content:
+      center;
+
+    min-width:
+      112px;
+
+    height:
+      54px;
+
+    padding:
+      0 18px;
+
+    border:
+      0;
+
+    outline:
+      none;
 
     background:
-      var(--gold);
+      #06130e;
+
+    color:
+      var(--ivory);
+
+    font:
+      900 11px
+      "Courier New",
+      Courier,
+      monospace;
+
+    letter-spacing:
+      2px;
+
+    text-transform:
+      uppercase;
+
+    cursor:
+      pointer;
+
+    image-rendering:
+      pixelated;
+
+    /*
+     * Stepped pixel corners.
+     */
+
+    clip-path:
+      polygon(
+        0 6px,
+        6px 6px,
+        6px 0,
+        calc(100% - 6px) 0,
+        calc(100% - 6px) 6px,
+        100% 6px,
+        100% calc(100% - 6px),
+        calc(100% - 6px) calc(100% - 6px),
+        calc(100% - 6px) 100%,
+        6px 100%,
+        6px calc(100% - 6px),
+        0 calc(100% - 6px)
+      );
+
+    transition:
+      transform
+        70ms steps(1, end),
+      filter
+        70ms steps(1, end),
+      background
+        70ms steps(1, end);
   }
 
-  .table-atmosphere-mark
-    span:first-child {
-    color:
-      rgba(
-        197,
-        163,
-        92,
-        0.70
+  /* =========================================================
+     PIXEL GOLD FRAME
+     ========================================================= */
+
+  .table-button::before {
+    content:
+      "";
+
+    position:
+      absolute;
+
+    inset:
+      0;
+
+    pointer-events:
+      none;
+
+    background:
+      linear-gradient(
+        90deg,
+        var(--gold-dark) 0 4px,
+        transparent 4px calc(100% - 4px),
+        var(--gold-dark) calc(100% - 4px)
+      );
+
+    opacity:
+      0.92;
+
+    clip-path:
+      polygon(
+        0 6px,
+        6px 6px,
+        6px 0,
+        calc(100% - 6px) 0,
+        calc(100% - 6px) 6px,
+        100% 6px,
+        100% calc(100% - 6px),
+        calc(100% - 6px) calc(100% - 6px),
+        calc(100% - 6px) 100%,
+        6px 100%,
+        6px calc(100% - 6px),
+        0 calc(100% - 6px)
       );
   }
 
+  /* =========================================================
+     INNER PIXEL PANEL
+     ========================================================= */
+
+  .table-button::after {
+    content:
+      "";
+
+    position:
+      absolute;
+
+    left:
+      4px;
+
+    right:
+      4px;
+
+    top:
+      4px;
+
+    bottom:
+      4px;
+
+    pointer-events:
+      none;
+
+    border:
+      1px solid
+      rgba(
+        225,
+        199,
+        119,
+        0.14
+      );
+
+    background:
+      linear-gradient(
+        180deg,
+        rgba(
+          255,
+          255,
+          255,
+          0.025
+        ),
+        rgba(
+          0,
+          0,
+          0,
+          0.18
+        )
+      );
+
+    clip-path:
+      polygon(
+        0 4px,
+        4px 4px,
+        4px 0,
+        calc(100% - 4px) 0,
+        calc(100% - 4px) 4px,
+        100% 4px,
+        100% calc(100% - 4px),
+        calc(100% - 4px) calc(100% - 4px),
+        calc(100% - 4px) 100%,
+        4px 100%,
+        4px calc(100% - 4px),
+        0 calc(100% - 4px)
+      );
+  }
+
+  /* =========================================================
+     DEAL
+     ========================================================= */
+
+  .table-button--deal {
+    min-width:
+      150px;
+
+    height:
+      58px;
+
+    background:
+      var(--green-mid);
+
+    color:
+      #f0dfae;
+
+    font-size:
+      12px;
+
+    letter-spacing:
+      2.5px;
+  }
+
+  /* =========================================================
+     NORMAL ACTION BUTTONS
+     ========================================================= */
+
+  .table-button:not(
+    .table-button--bet
+  ):not(
+    .table-button--deal
+  ) {
+    background:
+      #071b13;
+  }
+
+  /* =========================================================
+     +/- BUTTONS
+     ========================================================= */
+
+  .table-button--bet {
+    flex:
+      0 0 auto;
+
+    min-width:
+      64px;
+
+    width:
+      64px;
+
+    height:
+      58px;
+
+    padding:
+      0;
+
+    background:
+      #06140e;
+
+    color:
+      var(--gold-bright);
+
+    font-size:
+      28px;
+
+    line-height:
+      1;
+
+    letter-spacing:
+      0;
+  }
+
+  /* =========================================================
+     HOVER
+     ========================================================= */
+
+  .table-button:hover:not(
+    :disabled
+  ) {
+    background:
+      var(--green-light);
+
+    color:
+      #f1e4bd;
+
+    filter:
+      brightness(
+        1.12
+      );
+  }
+
+  .table-button--deal:hover:not(
+    :disabled
+  ) {
+    background:
+      #145139;
+
+    color:
+      #fff1be;
+  }
+
+  /* =========================================================
+     ACTIVE
+     ========================================================= */
+
+  .table-button:active:not(
+    :disabled
+  ) {
+    transform:
+      translate(
+        2px,
+        2px
+      );
+
+    filter:
+      brightness(
+        0.92
+      );
+  }
+
+  /* =========================================================
+     FOCUS
+     ========================================================= */
+
+  .table-button:focus-visible {
+    outline:
+      2px solid
+      var(--gold-bright);
+
+    outline-offset:
+      2px;
+  }
+
+  /* =========================================================
+     SURRENDER
+     ========================================================= */
+
+  .table-button--danger {
+    background:
+      #210d0d;
+
+    color:
+      #ddb1a9;
+  }
+
+  .table-button--danger:hover:not(
+    :disabled
+  ) {
+    background:
+      #481717;
+
+    color:
+      #f1cbc3;
+  }
+
+  /* =========================================================
+     DISABLED
+     ========================================================= */
+
+  .table-button:disabled {
+    opacity:
+      0.18;
+
+    cursor:
+      default;
+
+    filter:
+      grayscale(
+        0.55
+      );
+  }
+
+  /* =========================================================
+     HIDDEN
+     ========================================================= */
+
+  .is-hidden {
+    display:
+      none !important;
+  }
+
+  /* =========================================================
+     VIGNETTE
+     ========================================================= */
+
   .scene-vignette {
-    position: absolute;
-    inset: 0;
+    position:
+      absolute;
 
-    z-index: 90;
+    inset:
+      0;
 
-    pointer-events: none;
+    z-index:
+      90;
+
+    pointer-events:
+      none;
 
     background:
       radial-gradient(
@@ -2763,38 +2840,43 @@
           0,
           0
         )
-        43%,
+        40%,
         rgba(
           0,
           0,
           0,
           0.08
         )
-        64%,
+        60%,
         rgba(
           0,
           0,
           0,
-          0.36
+          0.34
         )
         88%,
         rgba(
           0,
           0,
           0,
-          0.62
+          0.66
         )
         100%
       );
   }
 
   .scene-edge {
-    position: absolute;
-    inset: 0;
+    position:
+      absolute;
 
-    z-index: 91;
+    inset:
+      0;
 
-    pointer-events: none;
+    z-index:
+      91;
+
+    pointer-events:
+      none;
 
     border:
       1px solid
@@ -2802,7 +2884,7 @@
         197,
         163,
         92,
-        0.035
+        0.04
       );
 
     box-shadow:
@@ -2815,56 +2897,91 @@
       );
   }
 
+  /* =========================================================
+     LOADING
+     ========================================================= */
+
   .loading-screen {
-    position: fixed;
-    inset: 0;
+    position:
+      fixed;
 
-    z-index: 500;
+    inset:
+      0;
 
-    display: flex;
+    z-index:
+      500;
 
-    align-items: center;
-    justify-content: center;
+    display:
+      flex;
 
-    flex-direction: column;
+    align-items:
+      center;
 
-    gap: 22px;
+    justify-content:
+      center;
 
-    background: #020403;
+    flex-direction:
+      column;
 
-    opacity: 1;
-    visibility: visible;
+    gap:
+      22px;
+
+    background:
+      #020403;
+
+    opacity:
+      1;
+
+    visibility:
+      visible;
 
     transition:
-      opacity 480ms steps(5, end),
-      visibility 480ms steps(5, end);
+      opacity
+        480ms steps(5, end),
+      visibility
+        480ms steps(5, end);
 
-    pointer-events: all;
+    pointer-events:
+      all;
   }
 
   .loading-screen--hidden {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
+    opacity:
+      0;
+
+    visibility:
+      hidden;
+
+    pointer-events:
+      none;
   }
 
   .loading-mark {
-    display: flex;
+    display:
+      flex;
 
-    align-items: center;
-    justify-content: center;
+    align-items:
+      center;
 
-    flex-direction: column;
+    justify-content:
+      center;
 
-    gap: 8px;
+    flex-direction:
+      column;
+
+    gap:
+      8px;
   }
 
   .loading-suit {
     color:
       var(--gold-bright);
 
-    font-size: 29px;
-    line-height: 1;
+    font-size:
+      29px;
+
+    line-height:
+      1;
 
     text-shadow:
       2px 2px 0
@@ -2877,15 +2994,23 @@
   }
 
   .loading-copy {
-    display: flex;
+    display:
+      flex;
 
-    align-items: center;
-    flex-direction: column;
+    align-items:
+      center;
 
-    gap: 4px;
+    flex-direction:
+      column;
 
-    line-height: 1;
-    text-align: center;
+    gap:
+      4px;
+
+    line-height:
+      1;
+
+    text-align:
+      center;
   }
 
   .loading-copy span {
@@ -2897,8 +3022,11 @@
         0.66
       );
 
-    font-size: 7px;
-    letter-spacing: 3px;
+    font-size:
+      7px;
+
+    letter-spacing:
+      3px;
   }
 
   .loading-copy strong {
@@ -2910,8 +3038,11 @@
         0.84
       );
 
-    font-size: 14px;
-    letter-spacing: 2px;
+    font-size:
+      14px;
+
+    letter-spacing:
+      2px;
   }
 
   .loading-bar {
@@ -2921,9 +3052,11 @@
         48vw
       );
 
-    height: 2px;
+    height:
+      2px;
 
-    overflow: hidden;
+    overflow:
+      hidden;
 
     background:
       rgba(
@@ -2935,8 +3068,11 @@
   }
 
   .loading-bar-fill {
-    width: 0;
-    height: 100%;
+    width:
+      0;
+
+    height:
+      100%;
 
     background:
       var(--gold);
@@ -2944,30 +3080,48 @@
     animation:
       loading-fill
       820ms
-      steps(10, end)
+      steps(
+        10,
+        end
+      )
       forwards;
   }
 
   @keyframes loading-fill {
+
     from {
-      width: 0;
+      width:
+        0;
     }
 
     to {
-      width: 100%;
+      width:
+        100%;
     }
   }
 
+  /* =========================================================
+     ERROR
+     ========================================================= */
+
   .game-error {
-    position: fixed;
-    inset: 0;
+    position:
+      fixed;
 
-    z-index: 600;
+    inset:
+      0;
 
-    display: grid;
-    place-items: center;
+    z-index:
+      600;
 
-    padding: 20px;
+    display:
+      grid;
+
+    place-items:
+      center;
+
+    padding:
+      20px;
 
     background:
       rgba(
@@ -2979,7 +3133,8 @@
   }
 
   .game-error[hidden] {
-    display: none !important;
+    display:
+      none !important;
   }
 
   .game-error-inner {
@@ -2996,14 +3151,20 @@
         100vh - 32px
       );
 
-    padding: 20px;
+    padding:
+      20px;
 
-    display: flex;
+    display:
+      flex;
 
-    align-items: center;
-    flex-direction: column;
+    align-items:
+      center;
 
-    gap: 8px;
+    flex-direction:
+      column;
+
+    gap:
+      8px;
 
     border:
       1px solid
@@ -3031,17 +3192,25 @@
         0.48
       );
 
-    text-align: center;
+    text-align:
+      center;
 
-    overflow: hidden;
+    overflow:
+      hidden;
   }
 
   .game-error-mark {
-    width: 24px;
-    height: 24px;
+    width:
+      24px;
 
-    display: grid;
-    place-items: center;
+    height:
+      24px;
+
+    display:
+      grid;
+
+    place-items:
+      center;
 
     border:
       1px solid
@@ -3065,7 +3234,8 @@
       "Courier New",
       monospace;
 
-    flex: 0 0 auto;
+    flex:
+      0 0 auto;
   }
 
   .game-error-inner strong {
@@ -3077,23 +3247,34 @@
         0.82
       );
 
-    font-size: 9px;
-    letter-spacing: 2px;
+    font-size:
+      9px;
+
+    letter-spacing:
+      2px;
   }
 
   .game-error-inner small {
-    width: 100%;
+    width:
+      100%;
 
-    max-width: 680px;
-    max-height: 48vh;
+    max-width:
+      680px;
 
-    overflow: auto;
+    max-height:
+      48vh;
 
-    white-space: pre-wrap;
+    overflow:
+      auto;
 
-    text-align: left;
+    white-space:
+      pre-wrap;
 
-    overflow-wrap: anywhere;
+    text-align:
+      left;
+
+    overflow-wrap:
+      anywhere;
 
     color:
       rgba(
@@ -3109,7 +3290,8 @@
       Courier,
       monospace;
 
-    padding: 10px;
+    padding:
+      10px;
 
     border:
       1px solid
@@ -3130,10 +3312,14 @@
   }
 
   .game-button-retry {
-    margin-top: 6px;
+    margin-top:
+      6px;
 
-    min-width: 88px;
-    height: 24px;
+    min-width:
+      88px;
+
+    height:
+      24px;
 
     border:
       1px solid
@@ -3165,11 +3351,14 @@
       "Courier New",
       monospace;
 
-    letter-spacing: 1.4px;
+    letter-spacing:
+      1.4px;
 
-    cursor: pointer;
+    cursor:
+      pointer;
 
-    flex: 0 0 auto;
+    flex:
+      0 0 auto;
   }
 
   .game-button-retry:hover {
@@ -3190,209 +3379,265 @@
       );
   }
 
+  /* =========================================================
+     TABLET
+     ========================================================= */
+
   @media (
     max-width: 800px
   ) {
 
     .ambient-info {
-      top: 13px;
-      font-size: 6px;
-      letter-spacing: 1.5px;
+      top:
+        13px;
+
+      font-size:
+        7px;
+
+      letter-spacing:
+        1.6px;
     }
 
     .ambient-info--left {
-      left: 13px;
+      left:
+        13px;
     }
 
     .ambient-info--right {
-      right: 13px;
+      right:
+        13px;
     }
 
     .player-foreground {
-      height: 14%;
-    }
-
-    .game-info {
-      left: 13px;
-      bottom: 82px;
-    }
-
-    .action-controls {
-      bottom: 2%;
-
-      gap: 4px;
-
-      max-width:
-        calc(
-          100vw - 16px
-        );
-    }
-
-    .table-button {
-      min-width: 41px;
-      height: 22px;
-
-      padding: 0 6px;
-
-      font-size: 5px;
-      letter-spacing: 1px;
-    }
-
-    .bet-controls {
-      bottom: 8.2%;
-    }
-
-    .table-atmosphere-mark {
-      bottom: 5.6%;
-
-      gap: 7px;
-
-      font-size: 5px;
-      letter-spacing: 0.9px;
-    }
-  }
-
-  @media (
-    max-width: 520px
-  ) {
-
-    .ambient-info {
-      opacity: 0.28;
-    }
-
-    .ambient-info--right {
-      display: none;
-    }
-
-    .player-forearm {
-      opacity: 0.18;
-    }
-
-    .game-info {
-      left: 10px;
-      bottom: 76px;
-      min-width: 66px;
-    }
-
-    .game-info-row {
-      font-size: 5px;
-    }
-
-    .game-info-value {
-      font-size: 12px;
+      height:
+        14%;
     }
 
     .round-status {
-      top: 52%;
+      font-size:
+        8px;
 
-      font-size: 5px;
-      letter-spacing: 1.4px;
-    }
+      padding:
+        7px 12px;
 
-    .scene-vignette {
-      background:
-        radial-gradient(
-          ellipse at center 46%,
-          rgba(
-            0,
-            0,
-            0,
-            0
-          )
-          38%,
-          rgba(
-            0,
-            0,
-            0,
-            0.08
-          )
-          58%,
-          rgba(
-            0,
-            0,
-            0,
-            0.44
-          )
-          86%,
-          rgba(
-            0,
-            0,
-            0,
-            0.68
-          )
-          100%
-        );
-    }
-
-    .table-atmosphere-mark {
-      display: none;
-    }
-
-    .loading-copy strong {
-      font-size: 12px;
-    }
-
-    .action-controls {
-      left: 50%;
-
-      width:
-        calc(
-          100% - 12px
-        );
-
-      flex-wrap: nowrap;
-
-      overflow: hidden;
-    }
-
-    .table-button {
-      flex: 1 1 auto;
-      min-width: 0;
-
-      padding: 0 4px;
+      letter-spacing:
+        2.1px;
     }
 
     .bet-controls {
-      bottom: 9.5%;
+      bottom:
+        12%;
+    }
+
+    .action-controls {
+      bottom:
+        2.8%;
+
+      gap:
+        7px;
+
+      width:
+        calc(
+          100vw - 18px
+        );
+    }
+
+    .table-button {
+      min-width:
+        96px;
+
+      height:
+        50px;
+
+      padding:
+        0 14px;
+
+      font-size:
+        10px;
+
+      letter-spacing:
+        1.5px;
+    }
+
+    .table-button--deal {
+      min-width:
+        130px;
+
+      height:
+        54px;
+    }
+
+    .table-button--bet {
+      min-width:
+        58px;
+
+      width:
+        58px;
+
+      height:
+        54px;
+
+      font-size:
+        26px;
     }
   }
+
+  /* =========================================================
+     SMALL MOBILE
+     ========================================================= */
+
+  @media (
+    max-width: 560px
+  ) {
+
+    .ambient-info--right {
+      display:
+        none;
+    }
+
+    .ambient-info {
+      opacity:
+        0.34;
+    }
+
+    .round-status {
+      top:
+        52%;
+
+      font-size:
+        7px;
+
+      letter-spacing:
+        1.7px;
+    }
+
+    .bet-controls {
+      bottom:
+        13%;
+
+      gap:
+        8px;
+    }
+
+    .action-controls {
+      bottom:
+        2%;
+
+      width:
+        calc(
+          100vw - 10px
+        );
+
+      gap:
+        5px;
+    }
+
+    .table-button {
+      flex:
+        1 1
+        calc(
+          33.333% - 5px
+        );
+
+      min-width:
+        0;
+
+      height:
+        48px;
+
+      padding:
+        0 5px;
+
+      font-size:
+        8px;
+
+      letter-spacing:
+        1px;
+    }
+
+    .table-button--deal {
+      flex:
+        1 1
+        calc(
+          50% - 5px
+        );
+
+      min-width:
+        0;
+
+      height:
+        52px;
+
+      font-size:
+        9px;
+    }
+
+    .table-button--bet {
+      flex:
+        0 0 54px;
+
+      min-width:
+        54px;
+
+      width:
+        54px;
+
+      height:
+        52px;
+
+      font-size:
+        24px;
+    }
+  }
+
+  /* =========================================================
+     LOW HEIGHT
+     ========================================================= */
 
   @media (
     max-height: 620px
   ) {
 
-    .game-info {
-      bottom: 74px;
-    }
-
     .bet-controls {
-      bottom: 8%;
+      bottom:
+        11%;
     }
 
     .action-controls {
-      bottom: 1.5%;
+      bottom:
+        1.8%;
     }
 
-    .table-atmosphere-mark {
-      display: none;
+    .round-status {
+      top:
+        51%;
     }
   }
+
+  /* =========================================================
+     REDUCED MOTION
+     ========================================================= */
 
   @media (
     prefers-reduced-motion: reduce
   ) {
 
     .loading-bar-fill {
-      animation: none;
-      width: 100%;
+      animation:
+        none;
+
+      width:
+        100%;
     }
 
     .loading-screen {
-      transition: none;
+      transition:
+        none;
     }
 
     .table-button {
-      transition: none;
+      transition:
+        none;
     }
   }
 </style>

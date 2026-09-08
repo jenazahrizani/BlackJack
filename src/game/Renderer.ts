@@ -20,9 +20,11 @@ import {
    - Player is physically seated at the table.
    - Dealer is visible without head / face.
    - Other players are visible only through body / sleeves / hands.
+   - Other player cards are ALWAYS hidden from the human player.
    - Entire scene is procedurally rendered.
-   - Entire scene is rendered internally at low resolution.
-   - Final output is nearest-neighbor pixel scaling.
+   - High-resolution procedural rendering with a premium pixel-inspired look.
+   - Final output uses smooth scaling; crispness comes from geometry, not
+     aggressive pixelation.
    - Real Blackjack state drives cards / chips / active player.
 
    Renderer responsibilities
@@ -34,7 +36,7 @@ import {
    - Actual cards
    - Actual chips
    - Table markings
-   - Result atmosphere
+   - Player information panel
    - Pixel treatment
 
    Renderer does NOT decide gameplay rules.
@@ -67,6 +69,8 @@ type CardVisual = {
   rotation: number;
 
   faceUp: boolean;
+
+  scaleX?: number;
 
   shadow?: boolean;
 
@@ -102,16 +106,16 @@ const TAU =
 
 const FONT = {
   tiny:
-    "700 6px 'Courier New', monospace",
-
-  small:
-    "700 7px 'Courier New', monospace",
-
-  medium:
     "700 9px 'Courier New', monospace",
 
-  large:
+  small:
+    "700 11px 'Courier New', monospace",
+
+  medium:
     "700 14px 'Courier New', monospace",
+
+  large:
+    "700 20px 'Courier New', monospace",
 };
 
 
@@ -195,10 +199,37 @@ export class Renderer {
      ======================================================================== */
 
   private sceneWidth =
-    480;
+    960;
 
   private sceneHeight =
-    270;
+    540;
+
+
+  /* ========================================================================
+     PER-CARD VISUAL MOTION
+     ------------------------------------------------------------------------
+     Renderer-side motion is intentionally independent from the gameplay
+     engine. This keeps the Blackjack rules authoritative while ensuring
+     every newly dealt card visibly travels from the shoe and every face-up
+     change gets a physical flip.
+     ======================================================================== */
+
+  private cardMotion =
+    new Map<
+      string,
+      {
+        born: number;
+        lastFaceUp: boolean;
+        flipStart: number | null;
+        flipFromFaceUp: boolean;
+      }
+    >();
+
+  private readonly cardDealDuration =
+    0.48;
+
+  private readonly cardFlipDuration =
+    0.34;
 
 
   /* ========================================================================
@@ -237,7 +268,10 @@ export class Renderer {
 
 
     this.ctx.imageSmoothingEnabled =
-      false;
+      true;
+
+    this.ctx.imageSmoothingQuality =
+      "high";
 
 
     this.internalCanvas =
@@ -271,7 +305,10 @@ export class Renderer {
 
 
     this.internalCtx.imageSmoothingEnabled =
-      false;
+      true;
+
+    this.internalCtx.imageSmoothingQuality =
+      "high";
   }
 
 
@@ -371,7 +408,10 @@ export class Renderer {
 
 
     this.ctx.imageSmoothingEnabled =
-      false;
+      true;
+
+    this.ctx.imageSmoothingQuality =
+      "high";
 
 
     /* ----------------------------------------------------------------------
@@ -392,10 +432,10 @@ export class Renderer {
     ) {
 
       this.sceneWidth =
-        360;
+        720;
 
       this.sceneHeight =
-        300;
+        600;
 
     } else if (
       aspect <
@@ -403,10 +443,10 @@ export class Renderer {
     ) {
 
       this.sceneWidth =
-        400;
+        800;
 
       this.sceneHeight =
-        300;
+        600;
 
     } else if (
       aspect <
@@ -414,18 +454,18 @@ export class Renderer {
     ) {
 
       this.sceneWidth =
-        448;
+        896;
 
       this.sceneHeight =
-        280;
+        560;
 
     } else {
 
       this.sceneWidth =
-        480;
+        960;
 
       this.sceneHeight =
-        270;
+        540;
     }
 
 
@@ -448,7 +488,10 @@ export class Renderer {
 
 
     this.internalCtx.imageSmoothingEnabled =
-      false;
+      true;
+
+    this.internalCtx.imageSmoothingQuality =
+      "high";
   }
 
 
@@ -477,6 +520,8 @@ export class Renderer {
 
     this.time +=
       this.delta;
+
+    this.pruneCardMotion();
 
 
     if (
@@ -637,6 +682,11 @@ export class Renderer {
     );
 
 
+    /*
+     * IMPORTANT:
+     *
+     * NPC / other-player cards are rendered face-down only.
+     */
     this.drawPeripheralCards(
       ctx,
       w,
@@ -644,6 +694,10 @@ export class Renderer {
     );
 
 
+    /*
+     * Human player's cards remain visible according to their
+     * real card.faceUp state.
+     */
     this.drawPlayerCards(
       ctx,
       w,
@@ -667,11 +721,34 @@ export class Renderer {
     );
 
 
-    this.drawGameStatusAtmosphere(
+    /*
+     * IMPORTANT:
+     *
+     * Keep the player information panel:
+     *
+     * - BANKROLL
+     * - BET
+     * - HAND
+     * - YOUR ACTION / PLAYER
+     *
+     * This is NOT the notification panel.
+     */
+    this.drawPlayerStatusPanel(
       ctx,
       w,
       h
     );
+
+
+    /*
+     * DO NOT render the old centered status atmosphere here.
+     *
+     * The following has intentionally been removed:
+     *
+     * this.drawGameStatusAtmosphere(...)
+     *
+     * Status notification is handled by the HTML #round-status.
+     */
 
 
     this.drawForegroundPresence(
@@ -721,7 +798,10 @@ export class Renderer {
 
 
     this.ctx.imageSmoothingEnabled =
-      false;
+      true;
+
+    this.ctx.imageSmoothingQuality =
+      "high";
 
 
     this.ctx.drawImage(
@@ -792,8 +872,6 @@ export class Renderer {
     );
 
 
-    /* Architectural seams. */
-
     ctx.fillStyle =
       "rgba(255,255,255,0.012)";
 
@@ -824,8 +902,6 @@ export class Renderer {
     );
 
 
-    /* Left wall. */
-
     ctx.fillStyle =
       "rgba(0,0,0,0.34)";
 
@@ -847,8 +923,6 @@ export class Renderer {
     );
 
 
-    /* Right wall. */
-
     ctx.fillRect(
       Math.round(
         w *
@@ -869,8 +943,6 @@ export class Renderer {
     );
 
 
-    /* Horizon. */
-
     const horizonY =
       Math.round(
         h *
@@ -889,8 +961,6 @@ export class Renderer {
       1
     );
 
-
-    /* Floor. */
 
     const floorGradient =
       ctx.createLinearGradient(
@@ -1262,6 +1332,27 @@ export class Renderer {
       true;
 
 
+    const seatPhase =
+      (
+        player?.seat ??
+        (
+          left
+            ? 1
+            : 5
+        )
+      ) *
+      1.73;
+
+
+    const idleMotion =
+      Math.sin(
+        this.time *
+        0.75 +
+        seatPhase
+      ) *
+      1.15;
+
+
     const jacket =
       player?.visual
         ?.jacket ??
@@ -1281,9 +1372,6 @@ export class Renderer {
         : 0.32;
 
 
-    /*
-     * Shoulder silhouette.
-     */
     ctx.fillStyle =
       jacket;
 
@@ -1298,7 +1386,8 @@ export class Renderer {
       ctx.moveTo(
         0,
         h *
-        0.48
+        0.48 +
+        idleMotion
       );
 
 
@@ -1306,7 +1395,8 @@ export class Renderer {
         w *
         0.075,
         h *
-        0.43
+        0.43 +
+        idleMotion
       );
 
 
@@ -1314,7 +1404,8 @@ export class Renderer {
         w *
         0.145,
         h *
-        0.46
+        0.46 +
+        idleMotion
       );
 
 
@@ -1322,14 +1413,16 @@ export class Renderer {
         w *
         0.17,
         h *
-        0.62
+        0.62 +
+        idleMotion
       );
 
 
       ctx.lineTo(
         0,
         h *
-        0.70
+        0.70 +
+        idleMotion
       );
 
     } else {
@@ -1337,7 +1430,8 @@ export class Renderer {
       ctx.moveTo(
         w,
         h *
-        0.47
+        0.47 +
+        idleMotion
       );
 
 
@@ -1345,7 +1439,8 @@ export class Renderer {
         w *
         0.925,
         h *
-        0.43
+        0.43 +
+        idleMotion
       );
 
 
@@ -1353,7 +1448,8 @@ export class Renderer {
         w *
         0.855,
         h *
-        0.46
+        0.46 +
+        idleMotion
       );
 
 
@@ -1361,14 +1457,16 @@ export class Renderer {
         w *
         0.83,
         h *
-        0.62
+        0.62 +
+        idleMotion
       );
 
 
       ctx.lineTo(
         w,
         h *
-        0.70
+        0.70 +
+        idleMotion
       );
     }
 
@@ -1379,9 +1477,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Forearm.
-     */
     ctx.fillStyle =
       jacketLight;
 
@@ -1397,7 +1492,8 @@ export class Renderer {
         w *
         0.10,
         h *
-        0.59
+        0.59 +
+        idleMotion
       );
 
 
@@ -1429,7 +1525,8 @@ export class Renderer {
         w *
         0.09,
         h *
-        0.67
+        0.67 +
+        idleMotion
       );
 
     } else {
@@ -1438,7 +1535,8 @@ export class Renderer {
         w *
         0.90,
         h *
-        0.59
+        0.59 +
+        idleMotion
       );
 
 
@@ -1470,7 +1568,8 @@ export class Renderer {
         w *
         0.91,
         h *
-        0.67
+        0.67 +
+        idleMotion
       );
     }
 
@@ -1481,9 +1580,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Hand.
-     */
     ctx.fillStyle =
       player?.visual
         ?.skin ??
@@ -1561,7 +1657,62 @@ export class Renderer {
             this.time *
             0.80
           ) *
-          0.7;
+          1.45;
+
+
+    const dealerState =
+      dealer?.state ??
+      "idle";
+
+
+    const actionBase =
+      Math.sin(
+        this.time *
+        8.0
+      );
+
+
+    const reachAmount =
+      dealerState ===
+        "reaching"
+        ? 1
+        : dealerState ===
+              "placing-card" ||
+            dealerState ===
+              "holding-card"
+          ? 0.78
+          : dealerState ===
+                "dealing" ||
+              dealerState ===
+                "revealing"
+            ? 0.55
+            : dealerState ===
+                "collecting"
+              ? 0.38
+              : 0;
+
+
+    const reachPulse =
+      reachAmount >
+      0
+        ? reachAmount *
+          (
+            0.92 +
+            actionBase *
+            0.08
+          )
+        : 0;
+
+
+    const armDrop =
+      reachPulse *
+      8;
+
+
+    const armReach =
+      reachPulse *
+      w *
+      0.055;
 
 
     const jacket =
@@ -1946,10 +2097,15 @@ export class Renderer {
       breathing,
       cx -
       w *
-      0.235,
+      (
+        0.235 -
+        reachPulse *
+        0.055
+      ),
       h *
       0.62 +
-      breathing,
+      breathing -
+      armDrop,
       -1,
       jacket,
       jacketLight,
@@ -1969,10 +2125,15 @@ export class Renderer {
       breathing,
       cx +
       w *
-      0.235,
+      (
+        0.235 -
+        reachPulse *
+        0.055
+      ),
       h *
       0.62 +
-      breathing,
+      breathing -
+      armDrop,
       1,
       jacket,
       jacketLight,
@@ -1997,13 +2158,21 @@ export class Renderer {
       ctx.fillRect(
         Math.round(
           cx -
-          18
+          18 -
+          armReach *
+          0.10
         ),
         Math.round(
           h *
-          0.45
+          0.45 +
+          breathing *
+          0.5
         ),
-        36,
+        36 +
+          Math.round(
+            armReach *
+            0.20
+          ),
         1
       );
     }
@@ -2787,15 +2956,24 @@ export class Renderer {
 
 
     const width =
-      29;
+      Math.round(
+        w *
+        0.052
+      );
 
 
     const height =
-      43;
+      Math.round(
+        width *
+        1.48
+      );
 
 
     const spacing =
-      17;
+      Math.round(
+        width *
+        0.66
+      );
 
 
     const totalWidth =
@@ -2831,21 +3009,42 @@ export class Renderer {
       }
 
 
+      const targetX =
+        startX +
+        i *
+        spacing;
+
+
+      const targetY =
+        y;
+
+
+      const motion =
+        this.getCardMotion(
+          card,
+          i,
+          targetX,
+          targetY
+        );
+
+
       this.drawCard(
         ctx,
         this.cardToVisual(
           card,
-          startX +
-          i *
-          spacing,
-          y,
+          motion.x,
+          motion.y,
           width,
           height,
           this.getDealerCardRotation(
             i,
             cards.length
-          ),
-          false
+          ) +
+            motion.rotationOffset,
+          false,
+          true,
+          motion.scaleX,
+          motion.faceUp
         )
       );
     }
@@ -2877,12 +3076,30 @@ export class Renderer {
       index -
       center
     ) *
-    0.025;
+      0.025;
   }
 
 
   /* ==========================================================================
      PERIPHERAL CARDS
+     --------------------------------------------------------------------------
+     VISIBILITY FIX
+     --------------------------------------------------------------------------
+     Other players' cards are ALWAYS rendered face-down.
+
+     The engine may contain:
+       card.faceUp === true
+
+     for an NPC card. That state can be used internally by the game engine,
+     but it must NEVER cause the human-facing renderer to reveal the card.
+
+     Therefore the final cardToVisual(...) call explicitly passes:
+
+       false
+
+     as faceUpOverride.
+
+     This affects only presentation and does NOT mutate gameplay state.
      ========================================================================== */
 
   private drawPeripheralCards(
@@ -2892,92 +3109,60 @@ export class Renderer {
   ): void {
 
     const players =
-      this.state?.casino
-        ?.players ??
+      this.state?.casino?.players ??
       [];
 
 
-    const leftPlayers =
-      players.filter(
-        (
-          player
-        ) =>
-          player.seat ===
-          1 ||
-          player.seat ===
-          2
-      );
+    const sideGroups: Array<{
+      side: "left" | "right";
+      seats: number[];
+    }> = [
+      {
+        side: "left",
+        seats: [1, 2],
+      },
+
+      {
+        side: "right",
+        seats: [4, 5],
+      },
+    ];
 
 
-    const rightPlayers =
-      players.filter(
-        (
-          player
-        ) =>
-          player.seat ===
-          4 ||
-          player.seat ===
-          5
-      );
-
-
-    if (
-      leftPlayers.length >
-      0
+    for (
+      const group of
+        sideGroups
     ) {
 
-      const left =
-        leftPlayers.find(
+      const player =
+        players.find(
           (
-            player
+            item
           ) =>
-            player.hand.cards.length >
-            0
+            item.type ===
+              "npc" &&
+            group.seats.includes(
+              item.seat
+            ) &&
+            item.hand.cards.length >
+              0
         );
 
 
       if (
-        left
+        !player
       ) {
-
-        this.drawSidePlayerHand(
-          ctx,
-          left,
-          w,
-          h,
-          "left"
-        );
+        continue;
       }
-    }
 
 
-    if (
-      rightPlayers.length >
-      0
-    ) {
-
-      const right =
-        rightPlayers.find(
-          (
-            player
-          ) =>
-            player.hand.cards.length >
-            0
-        );
-
-
-      if (
-        right
-      ) {
-
-        this.drawSidePlayerHand(
-          ctx,
-          right,
-          w,
-          h,
-          "right"
-        );
-      }
+      this.drawSidePlayerHand(
+        ctx,
+        player,
+        w,
+        h,
+        group.side
+      );
     }
   }
 
@@ -3003,15 +3188,24 @@ export class Renderer {
 
 
     const width =
-      24;
+      Math.round(
+        w *
+        0.043
+      );
 
 
     const height =
-      36;
+      Math.round(
+        width *
+        1.48
+      );
 
 
     const spacing =
-      17;
+      Math.round(
+        width *
+        0.68
+      );
 
 
     const left =
@@ -3024,27 +3218,35 @@ export class Renderer {
         Math.max(
           0,
           cards.length -
-          4
+            3
         )
+      );
+
+
+    const totalWidth =
+      Math.max(
+        width,
+        (
+          visibleCards.length -
+          1
+        ) *
+          spacing +
+          width
       );
 
 
     const baseX =
       left
         ? w *
-          0.145
+            0.085
         : w *
-          0.855 -
-          Math.min(
-            visibleCards.length *
-            spacing,
-            72
-          );
+            0.915 -
+          totalWidth;
 
 
     const y =
       h *
-      0.645;
+      0.635;
 
 
     for (
@@ -3077,26 +3279,48 @@ export class Renderer {
           visibleCards.length -
           1
         ) /
-        2;
+          2;
 
 
       const rotation =
         left
           ? centerOffset *
-            0.045
+            0.055
           : -centerOffset *
-            0.045;
+            0.055;
 
 
+      const motion =
+        this.getCardMotion(
+          card,
+          i,
+          x,
+          y
+        );
+
+
+      /*
+       * CRITICAL FIX:
+       *
+       * Do NOT pass motion.faceUp.
+       *
+       * Do NOT pass card.faceUp.
+       *
+       * NPC cards are always face-down.
+       */
       this.drawCard(
         ctx,
         this.cardToVisual(
           card,
-          x,
-          y,
+          motion.x,
+          motion.y,
           width,
           height,
-          rotation,
+          rotation +
+            motion.rotationOffset,
+          false,
+          true,
+          motion.scaleX,
           false
         )
       );
@@ -3146,14 +3370,14 @@ export class Renderer {
 
     const width =
       Math.round(
-        48 *
+        66 *
         zoom
       );
 
 
     const height =
       Math.round(
-        70 *
+        96 *
         zoom
       );
 
@@ -3161,7 +3385,7 @@ export class Renderer {
     const spread =
       Math.round(
         width *
-        0.70
+        0.68
       );
 
 
@@ -3189,29 +3413,29 @@ export class Renderer {
         ctx,
         secondary,
         centerX +
-        width *
-        0.68,
+          width *
+            0.68,
         baseY +
-        3,
+          3,
         Math.max(
           32,
           Math.round(
             width *
-            0.84
+              0.84
           )
         ),
         Math.max(
           48,
           Math.round(
             height *
-            0.84
+              0.84
           )
         ),
         Math.max(
           20,
           Math.round(
             spread *
-            0.70
+              0.70
           )
         ),
         1
@@ -3250,11 +3474,11 @@ export class Renderer {
         : Math.max(
             Math.round(
               spread *
-              0.62
+                0.58
             ),
             Math.round(
               width *
-              0.38
+                0.45
             )
           );
 
@@ -3264,14 +3488,14 @@ export class Renderer {
         cards.length -
         1
       ) *
-      spacing +
+        spacing +
       width;
 
 
     const startX =
       centerX -
       totalWidth /
-      2;
+        2;
 
 
     for (
@@ -3298,14 +3522,14 @@ export class Renderer {
           cards.length -
           1
         ) /
-        2;
+          2;
 
 
       const rotation =
         centerOffset *
-        0.065 +
+          0.055 +
         hand.rotation *
-        0.25;
+          0.20;
 
 
       const x =
@@ -3319,50 +3543,65 @@ export class Renderer {
         Math.abs(
           centerOffset
         ) *
-        1.4;
+        1.8;
 
 
+      const motion =
+        this.getCardMotion(
+          card,
+          i,
+          x,
+          y
+        );
+
+
+      /*
+       * Human player's cards:
+       *
+       * Keep the real face-up state.
+       */
       this.drawCard(
         ctx,
         this.cardToVisual(
           card,
-          x,
-          y,
+          motion.x,
+          motion.y,
           width,
           height,
-          rotation,
-          true
+          rotation +
+            motion.rotationOffset,
+          true,
+          true,
+          motion.scaleX,
+          motion.faceUp
         )
       );
     }
 
 
-    /*
-     * Split-hand divider.
-     */
     if (
       handIndex ===
       1
     ) {
 
       ctx.fillStyle =
-        "rgba(197,163,92,0.22)";
+        "rgba(231,209,142,0.35)";
 
 
       ctx.fillRect(
         Math.round(
           centerX -
-          width *
-          0.58
+            width *
+              0.58
         ),
         Math.round(
           baseY -
-          8
+            12
         ),
-        1,
+        2,
         Math.round(
           height *
-          0.72
+            0.78
         )
       );
     }
@@ -3380,7 +3619,10 @@ export class Renderer {
     width: number,
     height: number,
     rotation: number,
-    emphasis: boolean
+    emphasis: boolean,
+    useMotion = false,
+    scaleX?: number,
+    faceUpOverride?: boolean
   ): CardVisual {
 
     return {
@@ -3404,8 +3646,25 @@ export class Renderer {
 
       rotation,
 
+      /*
+       * Explicit override has priority.
+       *
+       * NPC renderer passes false.
+       * Human/dealer renderer can pass the real visual state.
+       */
       faceUp:
+        faceUpOverride ??
         card.faceUp,
+
+      scaleX:
+        useMotion
+          ? this.clamp(
+              scaleX ??
+                1,
+              0.02,
+              1
+            )
+          : 1,
 
       shadow:
         true,
@@ -3418,6 +3677,354 @@ export class Renderer {
           1
         ),
     };
+  }
+
+
+  private getCardMotion(
+    card: Card,
+    index: number,
+    targetX: number,
+    targetY: number
+  ): {
+    x: number;
+    y: number;
+    rotationOffset: number;
+    scaleX: number;
+    faceUp: boolean;
+  } {
+
+    const id =
+      card.id;
+
+
+    let motion =
+      this.cardMotion.get(
+        id
+      );
+
+
+    if (!motion) {
+
+      motion = {
+        born:
+          this.time,
+
+        lastFaceUp:
+          card.faceUp,
+
+        flipStart:
+          null,
+
+        flipFromFaceUp:
+          card.faceUp,
+      };
+
+
+      this.cardMotion.set(
+        id,
+        motion
+      );
+    }
+
+
+    if (
+      card.faceUp !==
+      motion.lastFaceUp
+    ) {
+
+      motion.flipStart =
+        this.time;
+
+      motion.flipFromFaceUp =
+        motion.lastFaceUp;
+
+      motion.lastFaceUp =
+        card.faceUp;
+    }
+
+
+    const delay =
+      Math.min(
+        index,
+        3
+      ) *
+      0.085;
+
+
+    const age =
+      Math.max(
+        0,
+        this.time -
+          motion.born -
+          delay
+      );
+
+
+    const dealProgress =
+      this.easeOutCubic(
+        this.clamp(
+          age /
+            this.cardDealDuration,
+          0,
+          1
+        )
+      );
+
+
+    let scaleX =
+      this.safeNumber(
+        card.transform.scaleX,
+        1
+      );
+
+
+    let faceUp =
+      card.faceUp;
+
+
+    if (
+      motion.flipStart !==
+      null
+    ) {
+
+      const flipProgress =
+        this.clamp(
+          (
+            this.time -
+              motion.flipStart
+          ) /
+            this.cardFlipDuration,
+          0,
+          1
+        );
+
+
+      scaleX =
+        Math.max(
+          0.025,
+          Math.abs(
+            Math.cos(
+              flipProgress *
+                Math.PI
+            )
+          )
+        );
+
+
+      faceUp =
+        flipProgress <
+        0.5
+          ? motion.flipFromFaceUp
+          : card.faceUp;
+
+
+      if (
+        flipProgress >=
+        1
+      ) {
+
+        motion.flipStart =
+          null;
+
+        scaleX =
+          1;
+
+        faceUp =
+          card.faceUp;
+      }
+    }
+
+
+    const deckX =
+      this.safeNumber(
+        this.state?.casino?.deck
+          ?.position.x,
+        0.57
+      ) *
+      this.sceneWidth;
+
+
+    const deckY =
+      this.safeNumber(
+        this.state?.casino?.deck
+          ?.position.y,
+        0.39
+      ) *
+      this.sceneHeight;
+
+
+    const arc =
+      Math.sin(
+        dealProgress *
+          Math.PI
+      ) *
+      -28;
+
+
+    const x =
+      deckX +
+      (
+        targetX -
+        deckX
+      ) *
+        dealProgress;
+
+
+    const y =
+      deckY +
+      (
+        targetY -
+        deckY
+      ) *
+        dealProgress +
+      arc;
+
+
+    const rotationOffset =
+      (
+        1 -
+        dealProgress
+      ) *
+        (
+          index %
+            2 ===
+          0
+            ? -0.14
+            : 0.14
+        ) +
+      Math.sin(
+        age *
+          10
+      ) *
+        0.018 *
+        (
+          1 -
+          dealProgress
+        );
+
+
+    return {
+      x,
+
+      y,
+
+      rotationOffset,
+
+      scaleX,
+
+      faceUp,
+    };
+  }
+
+
+  private easeOutCubic(
+    value: number
+  ): number {
+
+    const t =
+      this.clamp(
+        value,
+        0,
+        1
+      );
+
+
+    return (
+      1 -
+      Math.pow(
+        1 -
+          t,
+        3
+      )
+    );
+  }
+
+
+  private pruneCardMotion(): void {
+
+    if (
+      this.cardMotion.size <
+      300
+    ) {
+      return;
+    }
+
+
+    const activeIds =
+      new Set<string>();
+
+
+    const players =
+      this.state?.casino
+        ?.players ??
+      [];
+
+
+    for (
+      const player of
+        players
+    ) {
+
+      for (
+        const card of
+          player.hand.cards
+      ) {
+
+        activeIds.add(
+          card.id
+        );
+      }
+
+
+      if (
+        player.secondaryHand
+      ) {
+
+        for (
+          const card of
+            player
+              .secondaryHand
+              .cards
+        ) {
+
+          activeIds.add(
+            card.id
+          );
+        }
+      }
+    }
+
+
+    for (
+      const card of
+        this.state?.casino
+          ?.dealer
+          ?.hand.cards ??
+        []
+    ) {
+
+      activeIds.add(
+        card.id
+      );
+    }
+
+
+    for (
+      const id of
+        this.cardMotion.keys()
+    ) {
+
+      if (
+        !activeIds.has(
+          id
+        )
+      ) {
+
+        this.cardMotion.delete(
+          id
+        );
+      }
+    }
   }
 
 
@@ -3448,7 +4055,7 @@ export class Renderer {
     ctx.globalAlpha =
       this.clamp(
         visual.opacity ??
-        1,
+          1,
         0,
         1
       );
@@ -3456,11 +4063,18 @@ export class Renderer {
 
     ctx.translate(
       x +
-      width /
-      2,
+        width /
+          2,
       y +
-      height /
-      2
+        height /
+          2
+    );
+
+
+    ctx.scale(
+      visual.scaleX ??
+        1,
+      1
     );
 
 
@@ -3471,14 +4085,15 @@ export class Renderer {
 
     ctx.translate(
       -width /
-      2,
+        2,
       -height /
-      2
+        2
     );
 
 
-    /* Shadow. */
-
+    /*
+     * Shadow.
+     */
     if (
       visual.shadow !==
       false
@@ -3507,11 +4122,11 @@ export class Renderer {
         ctx.fillRect(
           6,
           height +
-          4,
+            4,
           Math.max(
             1,
             width -
-            10
+              10
           ),
           3
         );
@@ -3519,8 +4134,9 @@ export class Renderer {
     }
 
 
-    /* Card body. */
-
+    /*
+     * Card body.
+     */
     ctx.fillStyle =
       COLORS.card;
 
@@ -3538,8 +4154,9 @@ export class Renderer {
     ctx.fill();
 
 
-    /* Border. */
-
+    /*
+     * Border.
+     */
     ctx.strokeStyle =
       COLORS.cardEdge;
 
@@ -3553,9 +4170,9 @@ export class Renderer {
       0.5,
       0.5,
       width -
-      1,
+        1,
       height -
-      1,
+        1,
       2
     );
 
@@ -3563,8 +4180,9 @@ export class Renderer {
     ctx.stroke();
 
 
-    /* Highlight. */
-
+    /*
+     * Highlight.
+     */
     ctx.fillStyle =
       "rgba(255,255,255,0.12)";
 
@@ -3575,14 +4193,15 @@ export class Renderer {
       Math.max(
         1,
         width -
-        4
+          4
       ),
       1
     );
 
 
-    /* Card back. */
-
+    /*
+     * Card back.
+     */
     if (
       !faceUp
     ) {
@@ -3601,16 +4220,18 @@ export class Renderer {
     }
 
 
-    /* Suit / rank color. */
-
+    /*
+     * Face-up card.
+     */
     ctx.fillStyle =
       getSuitColor(
         suit
       );
 
 
-    /* Rank. */
-
+    /*
+     * Rank.
+     */
     ctx.font =
       width >=
       42
@@ -3633,8 +4254,9 @@ export class Renderer {
     );
 
 
-    /* Small suit. */
-
+    /*
+     * Small suit.
+     */
     ctx.font =
       width >=
       42
@@ -3648,14 +4270,15 @@ export class Renderer {
       ),
       5,
       width >=
-      42
+        42
         ? 15
         : 13
     );
 
 
-    /* Main suit pip. */
-
+    /*
+     * Main suit pip.
+     */
     ctx.textAlign =
       "center";
 
@@ -3676,14 +4299,15 @@ export class Renderer {
         suit
       ),
       width /
-      2,
+        2,
       height /
-      2
+        2
     );
 
 
-    /* Bottom rank. */
-
+    /*
+     * Bottom rank.
+     */
     ctx.textAlign =
       "right";
 
@@ -3702,14 +4326,15 @@ export class Renderer {
     ctx.fillText(
       rank,
       width -
-      4,
+        4,
       height -
-      4
+        4
     );
 
 
-    /* Bottom suit. */
-
+    /*
+     * Bottom suit.
+     */
     ctx.font =
       width >=
       42
@@ -3722,14 +4347,15 @@ export class Renderer {
         suit
       ),
       width -
-      5,
+        5,
       height -
-      14
+        14
     );
 
 
-    /* Active emphasis. */
-
+    /*
+     * Active emphasis.
+     */
     if (
       visual.emphasis
     ) {
@@ -3747,9 +4373,9 @@ export class Renderer {
         1.5,
         1.5,
         width -
-        3,
+          3,
         height -
-        3,
+          3,
         2
       );
 
@@ -3778,12 +4404,12 @@ export class Renderer {
       Math.max(
         1,
         width -
-        4
+          4
       ),
       Math.max(
         1,
         height -
-        4
+          4
       )
     );
 
@@ -3802,12 +4428,12 @@ export class Renderer {
       Math.max(
         1,
         width -
-        6
+          6
       ),
       Math.max(
         1,
         height -
-        6
+          6
       )
     );
 
@@ -3824,7 +4450,7 @@ export class Renderer {
         5,
         Math.floor(
           width /
-          5
+            5
         )
       );
 
@@ -3834,7 +4460,7 @@ export class Renderer {
         6,
         Math.floor(
           height /
-          6
+            6
         )
       );
 
@@ -3843,7 +4469,7 @@ export class Renderer {
       let y = 6;
       y <
       height -
-      6;
+        6;
       y += stepY
     ) {
 
@@ -3851,7 +4477,7 @@ export class Renderer {
         let x = 6;
         x <
         width -
-        6;
+          6;
         x += stepX
       ) {
 
@@ -3930,10 +4556,10 @@ export class Renderer {
 
     const radius =
       Math.max(
-        10,
+        15,
         Math.round(
-          11 *
-          zoom
+          15 *
+            zoom
         )
       );
 
@@ -3969,7 +4595,7 @@ export class Renderer {
           i %
           2
         ) *
-        2;
+          2;
 
 
       const chipY =
@@ -3980,7 +4606,7 @@ export class Renderer {
           1 -
           i
         ) *
-        5;
+          5;
 
 
       this.drawChip(
@@ -4016,14 +4642,14 @@ export class Renderer {
 
 
     /*
-     * Real bet display.
+     * Physical table bet marker.
      */
     ctx.fillStyle =
       "rgba(225,199,119,0.58)";
 
 
     ctx.font =
-      FONT.tiny;
+      FONT.small;
 
 
     ctx.textAlign =
@@ -4046,7 +4672,7 @@ export class Renderer {
       )}`,
       cx,
       baseY +
-      27
+        27
     );
   }
 
@@ -4074,8 +4700,9 @@ export class Renderer {
     );
 
 
-    /* Shadow. */
-
+    /*
+     * Shadow.
+     */
     ctx.fillStyle =
       "rgba(0,0,0,0.58)";
 
@@ -4088,7 +4715,7 @@ export class Renderer {
       3,
       r,
       r *
-      0.76,
+        0.76,
       0,
       0,
       TAU
@@ -4098,8 +4725,9 @@ export class Renderer {
     ctx.fill();
 
 
-    /* Main chip. */
-
+    /*
+     * Main chip.
+     */
     ctx.fillStyle =
       chip.color;
 
@@ -4119,8 +4747,9 @@ export class Renderer {
     ctx.fill();
 
 
-    /* Outer ring. */
-
+    /*
+     * Outer ring.
+     */
     ctx.strokeStyle =
       "rgba(238,216,152,0.70)";
 
@@ -4132,8 +4761,9 @@ export class Renderer {
     ctx.stroke();
 
 
-    /* Inner field. */
-
+    /*
+     * Inner field.
+     */
     ctx.fillStyle =
       "rgba(15,20,17,0.24)";
 
@@ -4145,7 +4775,7 @@ export class Renderer {
       0,
       0,
       r *
-      0.64,
+        0.64,
       0,
       TAU
     );
@@ -4154,8 +4784,9 @@ export class Renderer {
     ctx.fill();
 
 
-    /* Notches. */
-
+    /*
+     * Notches.
+     */
     ctx.fillStyle =
       COLORS.cardLight;
 
@@ -4194,11 +4825,11 @@ export class Renderer {
       ctx.fillRect(
         Math.round(
           x -
-          1
+            1
         ),
         Math.round(
           y -
-          1
+            1
         ),
         2,
         2
@@ -4206,14 +4837,15 @@ export class Renderer {
     }
 
 
-    /* Value. */
-
+    /*
+     * Value.
+     */
     ctx.fillStyle =
       COLORS.cardLight;
 
 
     ctx.font =
-      "700 5px 'Courier New', monospace";
+      "700 8px 'Courier New', monospace";
 
 
     ctx.textAlign =
@@ -4291,7 +4923,7 @@ export class Renderer {
       dealerRule,
       cx,
       h *
-      0.585
+        0.585
     );
 
 
@@ -4311,7 +4943,7 @@ export class Renderer {
       }`,
       cx,
       h *
-      0.61
+        0.61
     );
 
 
@@ -4323,162 +4955,292 @@ export class Renderer {
 
 
     ctx.font =
-      "700 5px 'Courier New', monospace";
+      FONT.small;
 
 
     ctx.fillText(
       `MIN $${table.minimumBet}  MAX $${table.maximumBet}`,
       cx,
       h *
-      0.645
+        0.645
     );
   }
 
 
   /* ==========================================================================
-     GAME STATUS ATMOSPHERE
+     PLAYER STATUS PANEL
+     --------------------------------------------------------------------------
+     IMPORTANT:
+     This panel is intentionally retained.
+
+     It contains:
+       - BANKROLL
+       - BET
+       - HAND
+       - YOUR ACTION / PLAYER
+
+     This is a player information HUD, not the centered notification.
      ========================================================================== */
 
-  private drawGameStatusAtmosphere(
+  private drawPlayerStatusPanel(
     ctx: CanvasRenderingContext2D,
     w: number,
     h: number
   ): void {
 
-    const blackjack =
-      this.state?.blackjack;
-
-
-    if (
-      !blackjack
-    ) {
-      return;
-    }
-
-
-    const cx =
-      w *
-      0.50;
-
-
-    let text:
-      | string
-      | null =
-      null;
-
-
-    switch (
-      blackjack.phase
-    ) {
-
-      case "betting":
-        text =
-          "PLACE YOUR BET";
-        break;
-
-
-      case "insurance":
-        text =
-          "INSURANCE";
-        break;
-
-
-      case "player-turn":
-
-        if (
-          blackjack.activeSeat ===
-          this.getHumanSeat()
-        ) {
-          text =
-            "YOUR TURN";
-        }
-
-        break;
-
-
-      case "dealer-turn":
-        text =
-          "DEALER";
-        break;
-
-
-      case "settlement":
-        text =
-          "SETTLING";
-        break;
-
-
-      case "complete":
-        text =
-          this.getHumanResultText();
-        break;
-
-
-      default:
-        break;
-    }
-
-
-    if (
-      !text
-    ) {
-      return;
-    }
-
-
-    const y =
-      h *
-      0.535;
-
-
-    ctx.fillStyle =
-      this.getStatusAlpha(
-        blackjack.phase
+    const human =
+      this.state?.casino?.players?.find(
+        player =>
+          player.type ===
+          "human"
       );
 
 
-    ctx.font =
-      FONT.tiny;
+    if (
+      !human
+    ) {
+      return;
+    }
+
+
+    const bankroll =
+      Math.max(
+        0,
+        Math.floor(
+          this.safeNumber(
+            human.balance,
+            0
+          )
+        )
+      );
+
+
+    const bet =
+      Math.max(
+        0,
+        Math.floor(
+          this.safeNumber(
+            human.bet,
+            0
+          )
+        )
+      );
+
+
+    const value =
+      Math.max(
+        0,
+        Math.floor(
+          this.safeNumber(
+            human.hand.value,
+            0
+          )
+        )
+      );
+
+
+    const isTurn =
+      this.state?.blackjack?.activeSeat ===
+        human.seat &&
+      this.state?.blackjack?.phase ===
+        "player-turn";
+
+
+    /*
+     * Keep this panel in the lower HUD zone.
+     *
+     * It is deliberately NOT centered over the table.
+     */
+    const panelY =
+      h *
+      0.905;
+
+
+    const leftX =
+      w *
+      0.055;
+
+
+    const rightX =
+      w *
+      0.945;
+
+
+    const panelW =
+      Math.min(
+        220,
+        w *
+        0.22
+      );
+
+
+    const panelH =
+      46;
+
+
+    ctx.save();
+
+
+    /*
+     * Bankroll panel.
+     */
+    ctx.fillStyle =
+      "rgba(5,8,7,0.78)";
+
+
+    this.roundRect(
+      ctx,
+      leftX,
+      panelY -
+        panelH /
+          2,
+      panelW,
+      panelH,
+      10
+    );
+
+
+    ctx.fill();
+
+
+    ctx.strokeStyle =
+      "rgba(231,209,142,0.28)";
+
+
+    ctx.lineWidth =
+      1;
+
+
+    ctx.stroke();
 
 
     ctx.textAlign =
-      "center";
+      "left";
 
 
     ctx.textBaseline =
       "middle";
 
 
+    ctx.font =
+      FONT.tiny;
+
+
+    ctx.fillStyle =
+      "rgba(231,225,211,0.58)";
+
+
     ctx.fillText(
-      text,
-      cx,
-      y
+      "BANKROLL",
+      leftX +
+        12,
+      panelY -
+        7
     );
+
+
+    ctx.font =
+      FONT.medium;
+
+
+    ctx.fillStyle =
+      "rgba(231,209,142,0.94)";
+
+
+    ctx.fillText(
+      `$${bankroll.toLocaleString()}`,
+      leftX +
+        12,
+      panelY +
+        11
+    );
+
+
+    /*
+     * Hand / bet panel.
+     */
+    ctx.fillStyle =
+      "rgba(5,8,7,0.78)";
+
+
+    this.roundRect(
+      ctx,
+      rightX -
+        panelW,
+      panelY -
+        panelH /
+          2,
+      panelW,
+      panelH,
+      10
+    );
+
+
+    ctx.fill();
+
+
+    ctx.strokeStyle =
+      isTurn
+        ? "rgba(231,209,142,0.70)"
+        : "rgba(231,209,142,0.28)";
+
+
+    ctx.stroke();
+
+
+    ctx.textAlign =
+      "right";
+
+
+    ctx.font =
+      FONT.tiny;
+
+
+    ctx.fillStyle =
+      "rgba(231,225,211,0.58)";
+
+
+    ctx.fillText(
+      `BET $${bet}  •  HAND ${value || "—"}`,
+      rightX -
+        12,
+      panelY -
+        7
+    );
+
+
+    ctx.font =
+      FONT.small;
+
+
+    ctx.fillStyle =
+      isTurn
+        ? "rgba(231,209,142,0.96)"
+        : "rgba(231,225,211,0.72)";
+
+
+    ctx.fillText(
+      isTurn
+        ? "YOUR ACTION"
+        : "PLAYER",
+      rightX -
+        12,
+      panelY +
+        11
+    );
+
+
+    ctx.restore();
   }
 
 
-  private getStatusAlpha(
-    phase: string
-  ): string {
-
-    switch (
-      phase
-    ) {
-
-      case "player-turn":
-        return "rgba(231,209,142,0.72)";
-
-      case "dealer-turn":
-        return "rgba(216,225,211,0.48)";
-
-      case "complete":
-        return "rgba(231,209,142,0.65)";
-
-      default:
-        return "rgba(197,163,92,0.45)";
-    }
-  }
-
+  /* ==========================================================================
+     OPTIONAL STATUS HELPERS
+     --------------------------------------------------------------------------
+     Retained for compatibility with existing GameVisualState / future
+     renderer integrations. They are no longer responsible for drawing the
+     centered notification panel.
+     ========================================================================== */
 
   private getHumanSeat(): number {
 
@@ -4706,28 +5468,25 @@ export class Renderer {
     h: number
   ): void {
 
-    /*
-     * Top darkness.
-     */
     const top =
       ctx.createLinearGradient(
         0,
         0,
         0,
         h *
-        0.36
+          0.38
       );
 
 
     top.addColorStop(
       0,
-      "rgba(0,0,0,0.34)"
+      "rgba(0,0,0,0.26)"
     );
 
 
     top.addColorStop(
       0.72,
-      "rgba(0,0,0,0.035)"
+      "rgba(0,0,0,0.018)"
     );
 
 
@@ -4746,27 +5505,24 @@ export class Renderer {
       0,
       w,
       h *
-      0.40
+        0.40
     );
 
 
-    /*
-     * Vignette.
-     */
     const vignette =
       ctx.createRadialGradient(
         w *
-        0.50,
+          0.50,
         h *
-        0.52,
+          0.50,
         h *
-        0.15,
+          0.20,
         w *
-        0.50,
+          0.50,
         h *
-        0.52,
+          0.50,
         w *
-        0.76
+          0.80
       );
 
 
@@ -4778,13 +5534,13 @@ export class Renderer {
 
     vignette.addColorStop(
       0.72,
-      "rgba(0,0,0,0.055)"
+      "rgba(0,0,0,0.035)"
     );
 
 
     vignette.addColorStop(
       1,
-      "rgba(0,0,0,0.42)"
+      "rgba(0,0,0,0.26)"
     );
 
 
@@ -4797,50 +5553,6 @@ export class Renderer {
       0,
       w,
       h
-    );
-
-
-    /*
-     * Subtle scan structure.
-     */
-    ctx.fillStyle =
-      "rgba(255,255,255,0.012)";
-
-
-    for (
-      let y = 0;
-      y <
-      h;
-      y += 4
-    ) {
-
-      ctx.fillRect(
-        0,
-        y,
-        w,
-        1
-      );
-    }
-
-
-    /*
-     * Pixel frame.
-     */
-    ctx.strokeStyle =
-      "rgba(0,0,0,0.44)";
-
-
-    ctx.lineWidth =
-      2;
-
-
-    ctx.strokeRect(
-      1,
-      1,
-      w -
-      2,
-      h -
-      2
     );
   }
 
@@ -4864,9 +5576,9 @@ export class Renderer {
         Math.min(
           radius,
           width /
-          2,
+            2,
           height /
-          2
+            2
         )
       );
 
@@ -4876,75 +5588,75 @@ export class Renderer {
 
     ctx.moveTo(
       x +
-      r,
+        r,
       y
     );
 
 
     ctx.lineTo(
       x +
-      width -
-      r,
+        width -
+        r,
       y
     );
 
 
     ctx.quadraticCurveTo(
       x +
-      width,
+        width,
       y,
       x +
-      width,
+        width,
       y +
-      r
+        r
     );
 
 
     ctx.lineTo(
       x +
-      width,
+        width,
       y +
-      height -
-      r
+        height -
+        r
     );
 
 
     ctx.quadraticCurveTo(
       x +
-      width,
+        width,
       y +
-      height,
+        height,
       x +
-      width -
-      r,
+        width -
+        r,
       y +
-      height
+        height
     );
 
 
     ctx.lineTo(
       x +
-      r,
+        r,
       y +
-      height
+        height
     );
 
 
     ctx.quadraticCurveTo(
       x,
       y +
-      height,
+        height,
       x,
       y +
-      height -
-      r
+        height -
+        r
     );
 
 
     ctx.lineTo(
       x,
       y +
-      r
+        r
     );
 
 
@@ -4952,7 +5664,7 @@ export class Renderer {
       x,
       y,
       x +
-      r,
+        r,
       y
     );
 
@@ -5052,6 +5764,9 @@ export class Renderer {
 
     this.state =
       null;
+
+
+    this.cardMotion.clear();
 
 
     this.time =

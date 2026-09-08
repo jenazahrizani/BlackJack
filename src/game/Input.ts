@@ -1664,12 +1664,29 @@ export class Input {
       );
 
 
+    if (wasAlreadyDown) {
+      return;
+    }
+
+
+    this.state.keys.add(
+      key
+    );
+
+
+    /*
+     * Gameplay keys should not cause browser scrolling or page activation.
+     * Game.ts still owns gameplay execution.
+     */
     if (
-      !wasAlreadyDown
+      key === "space" ||
+      key === "up" ||
+      key === "down" ||
+      key === "left" ||
+      key === "right" ||
+      this.keyToAction(key) !== null
     ) {
-      this.state.keys.add(
-        key
-      );
+      event.preventDefault();
     }
 
 
@@ -1857,6 +1874,30 @@ export class Input {
 
 
   /* ==========================================================================
+     ACTION NORMALIZATION
+     --------------------------------------------------------------------------
+     Keep betting action names canonical. Older callers may still use
+     bet-increase / bet-decrease; downstream code receives only the canonical
+     increase-bet / decrease-bet names.
+     ========================================================================== */
+
+  private normalizeAction(
+    action: InputAction
+  ): InputAction {
+    switch (action) {
+      case "bet-increase":
+        return "increase-bet";
+
+      case "bet-decrease":
+        return "decrease-bet";
+
+      default:
+        return action;
+    }
+  }
+
+
+  /* ==========================================================================
      ACTION TRIGGER
      ========================================================================== */
 
@@ -1872,6 +1913,12 @@ export class Input {
     }
 
 
+    const normalizedAction =
+      this.normalizeAction(
+        action
+      );
+
+
     /*
      * Emit through the input event system.
      */
@@ -1881,7 +1928,8 @@ export class Input {
         type:
           "click",
 
-        action,
+        action:
+          normalizedAction,
       }
     );
 
@@ -1902,7 +1950,8 @@ export class Input {
           "blackjack:action",
           {
             detail: {
-              action,
+              action:
+                normalizedAction,
             },
           }
         )
@@ -2359,6 +2408,15 @@ export class Input {
       (
         event: Event
       ) => {
+        if (
+          element instanceof
+            HTMLButtonElement &&
+          element.disabled
+        ) {
+          return;
+        }
+
+
         /*
          * Buttons / UI controls should not accidentally submit
          * a form while acting as game controls.
