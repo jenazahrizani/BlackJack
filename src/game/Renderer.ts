@@ -19,12 +19,12 @@ import {
    - First-person point of view.
    - Player is physically seated at the table.
    - Dealer is visible without head / face.
-   - Other players are visible only through body / sleeves / hands.
+   - Other players are visible through body / sleeves / hands.
    - Other player cards are ALWAYS hidden from the human player.
+   - Side-player cards are physically angled away from the camera.
+   - Side-player cards are partially occluded by hands / sleeves.
    - Entire scene is procedurally rendered.
-   - High-resolution procedural rendering with a premium pixel-inspired look.
-   - Final output uses smooth scaling; crispness comes from geometry, not
-     aggressive pixelation.
+   - High-resolution procedural rendering with controlled pixel styling.
    - Real Blackjack state drives cards / chips / active player.
 
    Renderer responsibilities
@@ -164,7 +164,7 @@ export class Renderer {
 
   private state:
     GameVisualState | null =
-    null;
+      null;
 
 
   /* ========================================================================
@@ -207,11 +207,6 @@ export class Renderer {
 
   /* ========================================================================
      PER-CARD VISUAL MOTION
-     ------------------------------------------------------------------------
-     Renderer-side motion is intentionally independent from the gameplay
-     engine. This keeps the Blackjack rules authoritative while ensuring
-     every newly dealt card visibly travels from the shoe and every face-up
-     change gets a physical flip.
      ======================================================================== */
 
   private cardMotion =
@@ -239,6 +234,7 @@ export class Renderer {
   constructor(
     canvas: HTMLCanvasElement
   ) {
+
     this.canvas =
       canvas;
 
@@ -312,9 +308,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      RESIZE
-     ========================================================================== */
+     ======================================================================== */
 
   resize(
     width: number,
@@ -495,9 +491,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      UPDATE
-     ========================================================================== */
+     ======================================================================== */
 
   update(
     delta: number,
@@ -521,6 +517,7 @@ export class Renderer {
     this.time +=
       this.delta;
 
+
     this.pruneCardMotion();
 
 
@@ -533,9 +530,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      MAIN RENDER
-     ========================================================================== */
+     ======================================================================== */
 
   render(
     state?: GameVisualState
@@ -560,10 +557,6 @@ export class Renderer {
     const h =
       this.sceneHeight;
 
-
-    /* ----------------------------------------------------------------------
-       RESET INTERNAL FRAME
-       ---------------------------------------------------------------------- */
 
     ctx.save();
 
@@ -683,9 +676,9 @@ export class Renderer {
 
 
     /*
-     * IMPORTANT:
-     *
-     * NPC / other-player cards are rendered face-down only.
+     * Side-player cards are drawn first.
+     * Occlusion is drawn afterwards so their hands/sleeves
+     * visibly cover the lower portion of the cards.
      */
     this.drawPeripheralCards(
       ctx,
@@ -694,10 +687,13 @@ export class Renderer {
     );
 
 
-    /*
-     * Human player's cards remain visible according to their
-     * real card.faceUp state.
-     */
+    this.drawPeripheralPlayerOcclusion(
+      ctx,
+      w,
+      h
+    );
+
+
     this.drawPlayerCards(
       ctx,
       w,
@@ -721,34 +717,11 @@ export class Renderer {
     );
 
 
-    /*
-     * IMPORTANT:
-     *
-     * Keep the player information panel:
-     *
-     * - BANKROLL
-     * - BET
-     * - HAND
-     * - YOUR ACTION / PLAYER
-     *
-     * This is NOT the notification panel.
-     */
     this.drawPlayerStatusPanel(
       ctx,
       w,
       h
     );
-
-
-    /*
-     * DO NOT render the old centered status atmosphere here.
-     *
-     * The following has intentionally been removed:
-     *
-     * this.drawGameStatusAtmosphere(...)
-     *
-     * Status notification is handled by the HTML #round-status.
-     */
 
 
     this.drawForegroundPresence(
@@ -760,10 +733,6 @@ export class Renderer {
 
     ctx.restore();
 
-
-    /* ----------------------------------------------------------------------
-       FINAL PIXEL TREATMENT
-       ---------------------------------------------------------------------- */
 
     this.drawFinalPixelTreatment(
       ctx,
@@ -800,6 +769,7 @@ export class Renderer {
     this.ctx.imageSmoothingEnabled =
       true;
 
+
     this.ctx.imageSmoothingQuality =
       "high";
 
@@ -817,9 +787,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      ROOM
-     ========================================================================== */
+     ======================================================================== */
 
   private drawRoom(
     ctx: CanvasRenderingContext2D,
@@ -997,9 +967,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      CASINO LIGHTS
-     ========================================================================== */
+     ======================================================================== */
 
   private drawCasinoLights(
     ctx: CanvasRenderingContext2D,
@@ -1021,11 +991,9 @@ export class Renderer {
         x:
           w *
           0.12,
-
         y:
           h *
           0.085,
-
         size:
           2,
       },
@@ -1034,11 +1002,9 @@ export class Renderer {
         x:
           w *
           0.27,
-
         y:
           h *
           0.065,
-
         size:
           3,
       },
@@ -1047,11 +1013,9 @@ export class Renderer {
         x:
           w *
           0.50,
-
         y:
           h *
           0.05,
-
         size:
           3,
       },
@@ -1060,11 +1024,9 @@ export class Renderer {
         x:
           w *
           0.73,
-
         y:
           h *
           0.065,
-
         size:
           3,
       },
@@ -1073,11 +1035,9 @@ export class Renderer {
         x:
           w *
           0.88,
-
         y:
           h *
           0.085,
-
         size:
           2,
       },
@@ -1259,9 +1219,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      PERIPHERAL PLAYERS
-     ========================================================================== */
+     ======================================================================== */
 
   private drawPeripheralPlayers(
     ctx: CanvasRenderingContext2D,
@@ -1270,8 +1230,7 @@ export class Renderer {
   ): void {
 
     const players =
-      this.state?.casino
-        ?.players ??
+      this.state?.casino?.players ??
       [];
 
 
@@ -1322,7 +1281,7 @@ export class Renderer {
     player?: Player
   ): void {
 
-    const left =
+    const isLeft =
       side ===
       "left";
 
@@ -1336,7 +1295,7 @@ export class Renderer {
       (
         player?.seat ??
         (
-          left
+          isLeft
             ? 1
             : 5
         )
@@ -1380,7 +1339,7 @@ export class Renderer {
 
 
     if (
-      left
+      isLeft
     ) {
 
       ctx.moveTo(
@@ -1485,7 +1444,7 @@ export class Renderer {
 
 
     if (
-      left
+      isLeft
     ) {
 
       ctx.moveTo(
@@ -1587,7 +1546,7 @@ export class Renderer {
 
 
     if (
-      left
+      isLeft
     ) {
 
       ctx.fillRect(
@@ -1624,9 +1583,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      DEALER
-     ========================================================================== */
+     ======================================================================== */
 
   private drawDealer(
     ctx: CanvasRenderingContext2D,
@@ -1734,9 +1693,6 @@ export class Renderer {
     ctx.save();
 
 
-    /*
-     * Dealer shadow.
-     */
     ctx.fillStyle =
       "rgba(0,0,0,0.54)";
 
@@ -1761,9 +1717,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Torso.
-     */
     ctx.fillStyle =
       jacket;
 
@@ -1833,9 +1786,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Jacket side shadow.
-     */
     ctx.fillStyle =
       "rgba(0,0,0,0.22)";
 
@@ -1934,9 +1884,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Shirt.
-     */
     ctx.fillStyle =
       shirt;
 
@@ -1996,9 +1943,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Tie.
-     */
     ctx.fillStyle =
       COLORS.red;
 
@@ -2052,9 +1996,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Jacket seam.
-     */
     ctx.strokeStyle =
       "rgba(231,209,142,0.16)";
 
@@ -2084,9 +2025,6 @@ export class Renderer {
     ctx.stroke();
 
 
-    /*
-     * Arms.
-     */
     this.drawDealerArm(
       ctx,
       cx -
@@ -2143,9 +2081,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Extremely subtle dealer state marker.
-     */
     if (
       dealer?.state ===
       "reaching"
@@ -2269,9 +2204,6 @@ export class Renderer {
     ctx.stroke();
 
 
-    /*
-     * Cuff.
-     */
     ctx.strokeStyle =
       COLORS.cardLight;
 
@@ -2309,9 +2241,6 @@ export class Renderer {
     ctx.stroke();
 
 
-    /*
-     * Hand.
-     */
     ctx.fillStyle =
       skin;
 
@@ -2334,9 +2263,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Finger block.
-     */
     ctx.fillStyle =
       COLORS.skinDark;
 
@@ -2357,9 +2283,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      TABLE
-     ========================================================================== */
+     ======================================================================== */
 
   private drawFirstPersonTable(
     ctx: CanvasRenderingContext2D,
@@ -2373,9 +2299,6 @@ export class Renderer {
       0.51;
 
 
-    /*
-     * Table body.
-     */
     ctx.fillStyle =
       COLORS.woodDeep;
 
@@ -2423,9 +2346,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Gold rail.
-     */
     ctx.strokeStyle =
       COLORS.goldDark;
 
@@ -2460,9 +2380,6 @@ export class Renderer {
     ctx.stroke();
 
 
-    /*
-     * Gold highlight.
-     */
     ctx.strokeStyle =
       COLORS.goldLight;
 
@@ -2505,9 +2422,6 @@ export class Renderer {
       1;
 
 
-    /*
-     * Felt.
-     */
     const feltTop =
       horizonY +
       19;
@@ -2558,9 +2472,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Felt glow.
-     */
     const feltGlow =
       ctx.createRadialGradient(
         w *
@@ -2648,9 +2559,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Front wood rail.
-     */
     ctx.fillStyle =
       COLORS.woodDeep;
 
@@ -2696,9 +2604,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Front rail highlight.
-     */
     ctx.strokeStyle =
       "rgba(197,163,92,0.34)";
 
@@ -2733,9 +2638,6 @@ export class Renderer {
     ctx.stroke();
 
 
-    /*
-     * Camera zoom shading.
-     */
     if (
       zoom >
       1.001
@@ -2916,9 +2818,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      DEALER CARDS
-     ========================================================================== */
+     ======================================================================== */
 
   private drawDealerCards(
     ctx: CanvasRenderingContext2D,
@@ -3080,27 +2982,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
-     PERIPHERAL CARDS
-     --------------------------------------------------------------------------
-     VISIBILITY FIX
-     --------------------------------------------------------------------------
-     Other players' cards are ALWAYS rendered face-down.
-
-     The engine may contain:
-       card.faceUp === true
-
-     for an NPC card. That state can be used internally by the game engine,
-     but it must NEVER cause the human-facing renderer to reveal the card.
-
-     Therefore the final cardToVisual(...) call explicitly passes:
-
-       false
-
-     as faceUpOverride.
-
-     This affects only presentation and does NOT mutate gameplay state.
-     ========================================================================== */
+  /* ========================================================================
+     SIDE PLAYER CARDS
+     ======================================================================== */
 
   private drawPeripheralCards(
     ctx: CanvasRenderingContext2D,
@@ -3109,63 +2993,116 @@ export class Renderer {
   ): void {
 
     const players =
-      this.state?.casino?.players ??
+      this.state?.casino
+        ?.players ??
       [];
 
 
-    const sideGroups: Array<{
-      side: "left" | "right";
-      seats: number[];
-    }> = [
-      {
-        side: "left",
-        seats: [1, 2],
-      },
-
-      {
-        side: "right",
-        seats: [4, 5],
-      },
-    ];
-
-
-    for (
-      const group of
-        sideGroups
-    ) {
-
-      const player =
-        players.find(
+    const leftPlayers =
+      players.filter(
+        (
+          player
+        ) =>
+          player.type ===
+            "npc" &&
           (
-            item
-          ) =>
-            item.type ===
-              "npc" &&
-            group.seats.includes(
-              item.seat
-            ) &&
-            item.hand.cards.length >
-              0
-        );
+            player.seat ===
+              1 ||
+            player.seat ===
+              2
+          ) &&
+          player.hand.cards.length >
+            0
+      );
 
 
-      if (
-        !player
-      ) {
-        continue;
-      }
+    const rightPlayers =
+      players.filter(
+        (
+          player
+        ) =>
+          player.type ===
+            "npc" &&
+          (
+            player.seat ===
+              4 ||
+            player.seat ===
+              5
+          ) &&
+          player.hand.cards.length >
+            0
+      );
 
+
+    /*
+     * Only the player closest to the camera
+     * is allowed to occupy the visible side
+     * of the composition.
+     */
+    const leftPlayer =
+      leftPlayers.length >
+      0
+        ? leftPlayers[
+            leftPlayers.length -
+            1
+          ]
+        : undefined;
+
+
+    const rightPlayer =
+      rightPlayers.length >
+      0
+        ? rightPlayers[0]
+        : undefined;
+
+
+    if (
+      leftPlayer
+    ) {
 
       this.drawSidePlayerHand(
         ctx,
-        player,
+        leftPlayer,
         w,
         h,
-        group.side
+        "left"
+      );
+    }
+
+
+    if (
+      rightPlayer
+    ) {
+
+      this.drawSidePlayerHand(
+        ctx,
+        rightPlayer,
+        w,
+        h,
+        "right"
       );
     }
   }
 
+
+  /* ========================================================================
+     SIDE PLAYER HAND
+
+     Perspective rules
+     ------------------------------------------------------------------------
+     Left:
+       cards rotate toward the left edge.
+
+     Right:
+       cards rotate toward the right edge.
+
+     Both:
+       - narrow X scale
+       - compact overlap
+       - lower placement
+       - slight inward tilt
+       - always face-down
+     ======================================================================== */
 
   private drawSidePlayerHand(
     ctx: CanvasRenderingContext2D,
@@ -3187,10 +3124,19 @@ export class Renderer {
     }
 
 
+    const isLeft =
+      side ===
+      "left";
+
+
+    /*
+     * Side cards are deliberately smaller
+     * than dealer / human cards.
+     */
     const width =
       Math.round(
         w *
-        0.043
+        0.036
       );
 
 
@@ -3201,16 +3147,21 @@ export class Renderer {
       );
 
 
+    /*
+     * Strong overlap.
+     *
+     * This visually communicates
+     * "held hand" rather than
+     * "cards placed on table".
+     */
     const spacing =
-      Math.round(
-        width *
-        0.68
+      Math.max(
+        8,
+        Math.round(
+          width *
+          0.40
+        )
       );
-
-
-    const left =
-      side ===
-      "left";
 
 
     const visibleCards =
@@ -3231,22 +3182,32 @@ export class Renderer {
           1
         ) *
           spacing +
-          width
+        width
       );
 
 
+    /*
+     * Move the hand toward the
+     * corresponding player's body.
+     */
     const baseX =
-      left
+      isLeft
         ? w *
-            0.085
+          0.090
         : w *
-            0.915 -
+          0.910 -
           totalWidth;
 
 
-    const y =
+    /*
+     * Lower than the old position.
+     *
+     * This lets the sleeves/hand
+     * naturally cover the card bottoms.
+     */
+    const baseY =
       h *
-      0.635;
+      0.675;
 
 
     for (
@@ -3267,12 +3228,6 @@ export class Renderer {
       }
 
 
-      const x =
-        baseX +
-        i *
-        spacing;
-
-
       const centerOffset =
         i -
         (
@@ -3282,12 +3237,53 @@ export class Renderer {
           2;
 
 
+      const x =
+        baseX +
+        i *
+          spacing;
+
+
+      /*
+       * Slight vertical fan.
+       */
+      const y =
+        baseY +
+        Math.abs(
+          centerOffset
+        ) *
+          1.5;
+
+
+      /*
+       * The cards are intentionally
+       * turned away from the camera.
+       *
+       * Left side:
+       *   - larger negative angle
+       *
+       * Right side:
+       *   + larger angle
+       */
       const rotation =
-        left
-          ? centerOffset *
-            0.055
-          : -centerOffset *
-            0.055;
+        isLeft
+          ? -0.38 +
+            centerOffset *
+              0.060
+          : 0.38 -
+            centerOffset *
+              0.060;
+
+
+      /*
+       * Narrow horizontal scale.
+       *
+       * This is the key visual difference
+       * from a card facing the camera.
+       */
+      const perspectiveScaleX =
+        isLeft
+          ? 0.58
+          : 0.58;
 
 
       const motion =
@@ -3300,37 +3296,439 @@ export class Renderer {
 
 
       /*
-       * CRITICAL FIX:
+       * NPC cards MUST stay hidden.
        *
-       * Do NOT pass motion.faceUp.
-       *
-       * Do NOT pass card.faceUp.
-       *
-       * NPC cards are always face-down.
+       * motion.faceUp is intentionally ignored.
+       * card.faceUp is intentionally ignored.
        */
-      this.drawCard(
-        ctx,
+      const visual =
         this.cardToVisual(
           card,
+
           motion.x,
+
           motion.y,
+
           width,
+
           height,
+
           rotation +
             motion.rotationOffset,
+
           false,
+
           true,
-          motion.scaleX,
+
+          Math.min(
+            motion.scaleX,
+            perspectiveScaleX
+          ),
+
           false
-        )
+        );
+
+
+      this.drawCard(
+        ctx,
+        visual
       );
     }
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
+     SIDE PLAYER OCCLUSION
+
+     The cards remain behind this layer, creating the impression that the
+     NPC is holding the cards close to their body rather than displaying them
+     face-on across the table.
+     ======================================================================== */
+
+  private drawPeripheralPlayerOcclusion(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number
+  ): void {
+
+    ctx.save();
+
+
+    /* ----------------------------------------------------------------------
+       LEFT PLAYER SLEEVE
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(8,15,12,0.96)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      0,
+      h *
+      0.655
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.065,
+      h *
+      0.628
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.145,
+      h *
+      0.642
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.220,
+      h *
+      0.696
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.250,
+      h
+    );
+
+
+    ctx.lineTo(
+      0,
+      h
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /* ----------------------------------------------------------------------
+       LEFT SLEEVE HIGHLIGHT
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(23,49,37,0.48)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.078,
+      h *
+      0.635
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.145,
+      h *
+      0.651
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.205,
+      h *
+      0.692
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.185,
+      h *
+      0.713
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.105,
+      h *
+      0.675
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /* ----------------------------------------------------------------------
+       RIGHT PLAYER SLEEVE
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(8,15,12,0.96)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w,
+      h *
+      0.655
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.935,
+      h *
+      0.628
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.855,
+      h *
+      0.642
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.780,
+      h *
+      0.696
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.750,
+      h
+    );
+
+
+    ctx.lineTo(
+      w,
+      h
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /* ----------------------------------------------------------------------
+       RIGHT SLEEVE HIGHLIGHT
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(23,49,37,0.48)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.922,
+      h *
+      0.635
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.855,
+      h *
+      0.651
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.795,
+      h *
+      0.692
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.815,
+      h *
+      0.713
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.895,
+      h *
+      0.675
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /* ----------------------------------------------------------------------
+       HAND COVER — LEFT
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(89,68,51,0.48)";
+
+
+    ctx.beginPath();
+
+
+    ctx.ellipse(
+      w *
+        0.205,
+      h *
+        0.687,
+      14,
+      6,
+      -0.14,
+      0,
+      TAU
+    );
+
+
+    ctx.fill();
+
+
+    ctx.fillStyle =
+      "rgba(61,44,34,0.22)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.190
+      ),
+      Math.round(
+        h *
+        0.690
+      ),
+      22,
+      4
+    );
+
+
+    /* ----------------------------------------------------------------------
+       HAND COVER — RIGHT
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(89,68,51,0.48)";
+
+
+    ctx.beginPath();
+
+
+    ctx.ellipse(
+      w *
+        0.795,
+      h *
+        0.687,
+      14,
+      6,
+      0.14,
+      0,
+      TAU
+    );
+
+
+    ctx.fill();
+
+
+    ctx.fillStyle =
+      "rgba(61,44,34,0.22)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.780
+      ),
+      Math.round(
+        h *
+        0.690
+      ),
+      22,
+      4
+    );
+
+
+    /*
+     * Small dark seam below the hand.
+     * This anchors the cards physically to the table.
+     */
+    ctx.fillStyle =
+      "rgba(0,0,0,0.28)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.14
+      ),
+      Math.round(
+        h *
+        0.714
+      ),
+      Math.round(
+        w *
+        0.11
+      ),
+      2
+    );
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.75
+      ),
+      Math.round(
+        h *
+        0.714
+      ),
+      Math.round(
+        w *
+        0.11
+      ),
+      2
+    );
+
+
+    ctx.restore();
+  }
+
+
+  /* ========================================================================
      PLAYER CARDS
-     ========================================================================== */
+     ======================================================================== */
 
   private drawPlayerCards(
     ctx: CanvasRenderingContext2D,
@@ -3555,11 +3953,6 @@ export class Renderer {
         );
 
 
-      /*
-       * Human player's cards:
-       *
-       * Keep the real face-up state.
-       */
       this.drawCard(
         ctx,
         this.cardToVisual(
@@ -3608,9 +4001,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
-     CARD CONVERSION
-     ========================================================================== */
+  /* ========================================================================
+     CARD VISUAL
+     ======================================================================== */
 
   private cardToVisual(
     card: Card,
@@ -3646,12 +4039,6 @@ export class Renderer {
 
       rotation,
 
-      /*
-       * Explicit override has priority.
-       *
-       * NPC renderer passes false.
-       * Human/dealer renderer can pass the real visual state.
-       */
       faceUp:
         faceUpOverride ??
         card.faceUp,
@@ -3661,7 +4048,7 @@ export class Renderer {
           ? this.clamp(
               scaleX ??
                 1,
-              0.02,
+              0.22,
               1
             )
           : 1,
@@ -3679,6 +4066,10 @@ export class Renderer {
     };
   }
 
+
+  /* ========================================================================
+     CARD MOTION
+     ======================================================================== */
 
   private getCardMotion(
     card: Card,
@@ -3703,7 +4094,9 @@ export class Renderer {
       );
 
 
-    if (!motion) {
+    if (
+      !motion
+    ) {
 
       motion = {
         born:
@@ -3791,7 +4184,7 @@ export class Renderer {
         this.clamp(
           (
             this.time -
-              motion.flipStart
+            motion.flipStart
           ) /
             this.cardFlipDuration,
           0,
@@ -3885,22 +4278,22 @@ export class Renderer {
         1 -
         dealProgress
       ) *
-        (
-          index %
-            2 ===
-          0
-            ? -0.14
-            : 0.14
-        ) +
+      (
+        index %
+          2 ===
+        0
+          ? -0.14
+          : 0.14
+      ) +
       Math.sin(
         age *
           10
       ) *
-        0.018 *
-        (
-          1 -
-          dealProgress
-        );
+      0.018 *
+      (
+        1 -
+        dealProgress
+      );
 
 
     return {
@@ -3982,9 +4375,7 @@ export class Renderer {
 
         for (
           const card of
-            player
-              .secondaryHand
-              .cards
+            player.secondaryHand.cards
         ) {
 
           activeIds.add(
@@ -4028,9 +4419,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      CARD RENDERING
-     ========================================================================== */
+     ======================================================================== */
 
   private drawCard(
     ctx: CanvasRenderingContext2D,
@@ -4064,16 +4455,24 @@ export class Renderer {
     ctx.translate(
       x +
         width /
-          2,
+        2,
       y +
         height /
-          2
+        2
     );
 
 
+    const visualScaleX =
+      this.clamp(
+        visual.scaleX ??
+          1,
+        0.22,
+        1
+      );
+
+
     ctx.scale(
-      visual.scaleX ??
-        1,
+      visualScaleX,
       1
     );
 
@@ -4200,7 +4599,7 @@ export class Renderer {
 
 
     /*
-     * Card back.
+     * Face-down card.
      */
     if (
       !faceUp
@@ -4229,9 +4628,6 @@ export class Renderer {
       );
 
 
-    /*
-     * Rank.
-     */
     ctx.font =
       width >=
       42
@@ -4254,9 +4650,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Small suit.
-     */
     ctx.font =
       width >=
       42
@@ -4276,9 +4669,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Main suit pip.
-     */
     ctx.textAlign =
       "center";
 
@@ -4305,9 +4695,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Bottom rank.
-     */
     ctx.textAlign =
       "right";
 
@@ -4332,9 +4719,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Bottom suit.
-     */
     ctx.font =
       width >=
       42
@@ -4353,9 +4737,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Active emphasis.
-     */
     if (
       visual.emphasis
     ) {
@@ -4438,9 +4819,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Diamond lattice.
-     */
     ctx.fillStyle =
       "rgba(226,199,119,0.63)";
 
@@ -4450,7 +4828,7 @@ export class Renderer {
         5,
         Math.floor(
           width /
-            5
+          5
         )
       );
 
@@ -4460,7 +4838,7 @@ export class Renderer {
         6,
         Math.floor(
           height /
-            6
+          6
         )
       );
 
@@ -4492,9 +4870,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      PLAYER CHIPS
-     ========================================================================== */
+     ======================================================================== */
 
   private drawPlayerChips(
     ctx: CanvasRenderingContext2D,
@@ -4641,9 +5019,6 @@ export class Renderer {
     }
 
 
-    /*
-     * Physical table bet marker.
-     */
     ctx.fillStyle =
       "rgba(225,199,119,0.58)";
 
@@ -4700,9 +5075,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Shadow.
-     */
     ctx.fillStyle =
       "rgba(0,0,0,0.58)";
 
@@ -4725,9 +5097,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Main chip.
-     */
     ctx.fillStyle =
       chip.color;
 
@@ -4747,9 +5116,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Outer ring.
-     */
     ctx.strokeStyle =
       "rgba(238,216,152,0.70)";
 
@@ -4761,9 +5127,6 @@ export class Renderer {
     ctx.stroke();
 
 
-    /*
-     * Inner field.
-     */
     ctx.fillStyle =
       "rgba(15,20,17,0.24)";
 
@@ -4784,9 +5147,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Notches.
-     */
     ctx.fillStyle =
       COLORS.cardLight;
 
@@ -4837,9 +5197,6 @@ export class Renderer {
     }
 
 
-    /*
-     * Value.
-     */
     ctx.fillStyle =
       COLORS.cardLight;
 
@@ -4867,9 +5224,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      TABLE MARKINGS
-     ========================================================================== */
+     ======================================================================== */
 
   private drawTableMarkings(
     ctx: CanvasRenderingContext2D,
@@ -4894,9 +5251,6 @@ export class Renderer {
       0.50;
 
 
-    /*
-     * Dealer rule.
-     */
     ctx.fillStyle =
       "rgba(197,163,92,0.44)";
 
@@ -4927,9 +5281,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Blackjack payout.
-     */
     ctx.fillStyle =
       "rgba(231,225,211,0.26)";
 
@@ -4947,9 +5298,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Minimum / maximum.
-     */
     ctx.fillStyle =
       "rgba(197,163,92,0.20)";
 
@@ -4967,20 +5315,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      PLAYER STATUS PANEL
-     --------------------------------------------------------------------------
-     IMPORTANT:
-     This panel is intentionally retained.
-
-     It contains:
-       - BANKROLL
-       - BET
-       - HAND
-       - YOUR ACTION / PLAYER
-
-     This is a player information HUD, not the centered notification.
-     ========================================================================== */
+     ======================================================================== */
 
   private drawPlayerStatusPanel(
     ctx: CanvasRenderingContext2D,
@@ -4989,11 +5326,13 @@ export class Renderer {
   ): void {
 
     const human =
-      this.state?.casino?.players?.find(
-        player =>
-          player.type ===
-          "human"
-      );
+      this.state?.casino
+        ?.players
+        ?.find(
+          player =>
+            player.type ===
+            "human"
+        );
 
 
     if (
@@ -5046,11 +5385,6 @@ export class Renderer {
         "player-turn";
 
 
-    /*
-     * Keep this panel in the lower HUD zone.
-     *
-     * It is deliberately NOT centered over the table.
-     */
     const panelY =
       h *
       0.905;
@@ -5081,9 +5415,6 @@ export class Renderer {
     ctx.save();
 
 
-    /*
-     * Bankroll panel.
-     */
     ctx.fillStyle =
       "rgba(5,8,7,0.78)";
 
@@ -5156,9 +5487,6 @@ export class Renderer {
     );
 
 
-    /*
-     * Hand / bet panel.
-     */
     ctx.fillStyle =
       "rgba(5,8,7,0.78)";
 
@@ -5234,13 +5562,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      OPTIONAL STATUS HELPERS
-     --------------------------------------------------------------------------
-     Retained for compatibility with existing GameVisualState / future
-     renderer integrations. They are no longer responsible for drawing the
-     centered notification panel.
-     ========================================================================== */
+     ======================================================================== */
 
   private getHumanSeat(): number {
 
@@ -5303,7 +5627,7 @@ export class Renderer {
 
           return (
             typeof settlement.handId ===
-            "string" &&
+              "string" &&
             !settlement.handId.startsWith(
               "insurance-"
             )
@@ -5345,9 +5669,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      FOREGROUND PRESENCE
-     ========================================================================== */
+     ======================================================================== */
 
   private drawForegroundPresence(
     ctx: CanvasRenderingContext2D,
@@ -5422,9 +5746,6 @@ export class Renderer {
     ctx.fill();
 
 
-    /*
-     * Abstract foreground cuffs / hands.
-     */
     ctx.fillStyle =
       "rgba(65,54,44,0.24)";
 
@@ -5458,9 +5779,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      FINAL PIXEL TREATMENT
-     ========================================================================== */
+     ======================================================================== */
 
   private drawFinalPixelTreatment(
     ctx: CanvasRenderingContext2D,
@@ -5557,9 +5878,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      ROUND RECT
-     ========================================================================== */
+     ======================================================================== */
 
   private roundRect(
     ctx: CanvasRenderingContext2D,
@@ -5673,9 +5994,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      NUMBER SAFETY
-     ========================================================================== */
+     ======================================================================== */
 
   private safeNumber(
     value:
@@ -5708,9 +6029,9 @@ export class Renderer {
   }
 
 
-  /* ==========================================================================
+  /* ========================================================================
      CLEANUP
-     ========================================================================== */
+     ======================================================================== */
 
   destroy(): void {
 
