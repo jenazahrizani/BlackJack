@@ -1,4 +1,7 @@
-<div class="casino-shell">
+<div
+  class="casino-shell"
+  data-blackjack-game
+>
   <main
     class="game-stage"
     aria-label="First-person Blackjack 21 casino table"
@@ -239,10 +242,7 @@
 </div>
 
 <script>
-  import {
-    Game,
-  } from "../game/Game";
-
+  import { Game } from "../game/Game";
 
   type Action =
     | "deal"
@@ -256,9 +256,31 @@
     | "increase-bet"
     | "decrease-bet";
 
+  type BlackjackRuntimeWindow =
+    Window & {
+      __BLACKJACK_GAME_INSTANCE__?: Game | null;
+    };
+
+  const runtimeWindow =
+    window as BlackjackRuntimeWindow;
 
   /* =========================================================
-     GAME INSTANCE
+     ROOT
+     ========================================================= */
+
+  const root =
+    document.querySelector(
+      "[data-blackjack-game]"
+    ) as HTMLElement | null;
+
+  if (!root) {
+    throw new Error(
+      "Blackjack Game root element was not found."
+    );
+  }
+
+  /* =========================================================
+     GAME
      ========================================================= */
 
   let game:
@@ -268,78 +290,90 @@
   let initializing =
     false;
 
+  let destroyed =
+    false;
+
+  let fatalVisible =
+    false;
 
   /* =========================================================
      DOM
      ========================================================= */
 
+  const query =
+    <T extends Element>(
+      selector: string
+    ): T | null =>
+      root.querySelector(
+        selector
+      ) as T | null;
+
   const canvas =
-    document.querySelector(
+    query<HTMLCanvasElement>(
       "#game-canvas"
-    ) as HTMLCanvasElement | null;
+    );
 
   const loadingScreen =
-    document.querySelector(
+    query<HTMLElement>(
       "#loading-screen"
-    ) as HTMLElement | null;
+    );
 
   const gameError =
-    document.querySelector(
+    query<HTMLElement>(
       "#game-error"
-    ) as HTMLElement | null;
+    );
 
   const gameErrorCopy =
-    document.querySelector(
+    query<HTMLElement>(
       "#game-error-copy"
-    ) as HTMLElement | null;
+    );
 
   const retryButton =
-    document.querySelector(
+    query<HTMLButtonElement>(
       "#game-error-reload"
-    ) as HTMLButtonElement | null;
+    );
 
   const bankrollValue =
-    document.querySelector(
+    query<HTMLElement>(
       "#bankroll-value"
-    ) as HTMLElement | null;
+    );
 
   const betValue =
-    document.querySelector(
+    query<HTMLElement>(
       "#bet-value"
-    ) as HTMLElement | null;
+    );
 
   const betDisplay =
-    document.querySelector(
+    query<HTMLElement>(
       "#bet-display"
-    ) as HTMLElement | null;
+    );
 
   const handValue =
-    document.querySelector(
+    query<HTMLElement>(
       "#hand-value"
-    ) as HTMLElement | null;
+    );
 
   const roundStatus =
-    document.querySelector(
+    query<HTMLElement>(
       "#round-status"
-    ) as HTMLElement | null;
+    );
 
   const betControls =
-    document.querySelector(
+    query<HTMLElement>(
       "#bet-controls"
-    ) as HTMLElement | null;
+    );
 
   const actionControls =
-    document.querySelector(
+    query<HTMLElement>(
       "#action-controls"
-    ) as HTMLElement | null;
+    );
 
   const actionButtons =
     Array.from(
-      document.querySelectorAll(
-        "[data-action]"
+      root.querySelectorAll(
+        "button[data-action]"
       )
     ) as HTMLButtonElement[];
-
 
   /* =========================================================
      HELPERS
@@ -365,6 +399,21 @@
       )}`;
     };
 
+  const safeLog =
+    (
+      label: string,
+      value?: unknown
+    ): void => {
+
+      try {
+        console.error(
+          label,
+          value
+        );
+      } catch {
+        /* logging must never crash the game */
+      }
+    };
 
   const getHuman =
     () =>
@@ -373,13 +422,11 @@
         .getHumanPlayer() ??
       null;
 
-
   const getHumanHand =
     () =>
       getHuman()
         ?.hand ??
       null;
-
 
   const getEnginePhase =
     () =>
@@ -387,7 +434,6 @@
         ?.blackjack
         .phase ??
       "waiting";
-
 
   const setHidden =
     (
@@ -407,26 +453,34 @@
       );
     };
 
-
   /* =========================================================
-     TABLE STATUS
+     TABLE
      ========================================================= */
 
   const isTableAvailable =
     (): boolean => {
 
       if (
-        !game
+        !game ||
+        destroyed
       ) {
         return false;
       }
 
-      return game.isTableAvailable();
+      try {
+        return game.isTableAvailable();
+      } catch (error) {
+        safeLog(
+          "[BLACKJACK] Table availability check failed.",
+          error
+        );
+
+        return false;
+      }
     };
 
-
   /* =========================================================
-     HAND HELPERS
+     HAND RULES
      ========================================================= */
 
   const canDouble =
@@ -441,7 +495,8 @@
       if (
         !game ||
         !player ||
-        !hand
+        !hand ||
+        destroyed
       ) {
         return false;
       }
@@ -473,7 +528,6 @@
       );
     };
 
-
   const canSplit =
     (): boolean => {
 
@@ -486,7 +540,8 @@
       if (
         !game ||
         !player ||
-        !hand
+        !hand ||
+        destroyed
       ) {
         return false;
       }
@@ -544,7 +599,6 @@
       );
     };
 
-
   const canSurrender =
     (): boolean => {
 
@@ -557,7 +611,8 @@
       if (
         !game ||
         !player ||
-        !hand
+        !hand ||
+        destroyed
       ) {
         return false;
       }
@@ -574,15 +629,17 @@
       );
     };
 
-
   /* =========================================================
-     RESULT TEXT
+     RESULT
      ========================================================= */
 
   const getResultText =
     (): string => {
 
-      if (!game) {
+      if (
+        !game ||
+        destroyed
+      ) {
         return "ROUND OVER";
       }
 
@@ -593,11 +650,8 @@
         return "ROUND OVER";
       }
 
-      const settlements =
-        game.blackjack.settlements;
-
       const result =
-        settlements.find(
+        game.blackjack.settlements.find(
           (
             settlement
           ) => {
@@ -609,13 +663,10 @@
               return false;
             }
 
-            const handId =
-              settlement.handId;
-
             return (
-              typeof handId ===
+              typeof settlement.handId ===
                 "string" &&
-              !handId.startsWith(
+              !settlement.handId.startsWith(
                 "insurance-"
               )
             );
@@ -651,15 +702,160 @@
       }
     };
 
+  /* =========================================================
+     LOADING
+     ========================================================= */
+
+  const showLoading =
+    (): void => {
+
+      loadingScreen?.classList.remove(
+        "loading-screen--hidden"
+      );
+    };
+
+  const hideLoading =
+    (): void => {
+
+      loadingScreen?.classList.add(
+        "loading-screen--hidden"
+      );
+    };
 
   /* =========================================================
-     UI STATE
+     FATAL ERROR
+     ========================================================= */
+
+  const formatError =
+    (
+      error: unknown
+    ): string => {
+
+      if (
+        error instanceof Error
+      ) {
+
+        return [
+          error.message ||
+            "Unknown error.",
+          error.stack
+            ? `\n\nSTACK:\n${error.stack}`
+            : ""
+        ].join("");
+      }
+
+      if (
+        typeof error ===
+        "string"
+      ) {
+        return error;
+      }
+
+      if (
+        error ===
+        undefined
+      ) {
+        return "Unknown initialization error.";
+      }
+
+      try {
+        return JSON.stringify(
+          error,
+          null,
+          2
+        );
+      } catch {
+        return String(
+          error
+        );
+      }
+    };
+
+  const showFatalError =
+    (
+      error?: unknown
+    ): void => {
+
+      fatalVisible =
+        true;
+
+      safeLog(
+        "[BLACKJACK FATAL ERROR]",
+        error
+      );
+
+      if (
+        gameErrorCopy
+      ) {
+        gameErrorCopy.textContent =
+          formatError(
+            error
+          );
+      }
+
+      if (
+        gameError
+      ) {
+        gameError.hidden =
+          false;
+
+        gameError.setAttribute(
+          "aria-hidden",
+          "false"
+        );
+      }
+
+      hideLoading();
+    };
+
+  const clearFatalError =
+    (): void => {
+
+      fatalVisible =
+        false;
+
+      if (
+        gameError
+      ) {
+        gameError.hidden =
+          true;
+
+        gameError.setAttribute(
+          "aria-hidden",
+          "true"
+        );
+      }
+
+      if (
+        gameErrorCopy
+      ) {
+        gameErrorCopy.textContent =
+          "Blackjack failed to initialize.";
+      }
+    };
+
+  /* =========================================================
+     DEBUG
+     ========================================================= */
+
+  const exposeDebugGame =
+    (): void => {
+
+      runtimeWindow.__BLACKJACK_GAME_INSTANCE__ =
+        game;
+    };
+
+  /* =========================================================
+     UI
      ========================================================= */
 
   const updateGameUI =
     (): void => {
 
-      if (!game) {
+      if (
+        !game ||
+        destroyed
+      ) {
         return;
       }
 
@@ -668,27 +864,37 @@
 
       if (!player) {
 
-        if (roundStatus) {
+        if (
+          roundStatus
+        ) {
           roundStatus.textContent =
             "TABLE READY";
         }
 
-        if (bankrollValue) {
+        if (
+          bankrollValue
+        ) {
           bankrollValue.textContent =
             "$0";
         }
 
-        if (betValue) {
+        if (
+          betValue
+        ) {
           betValue.textContent =
             "$0";
         }
 
-        if (betDisplay) {
+        if (
+          betDisplay
+        ) {
           betDisplay.textContent =
             "$0";
         }
 
-        if (handValue) {
+        if (
+          handValue
+        ) {
           handValue.textContent =
             "—";
         }
@@ -726,10 +932,9 @@
           ? player.bet
           : 0;
 
-
-      /* -----------------------------------------------------
-         MONEY
-         ----------------------------------------------------- */
+      /*
+       * MONEY
+       */
 
       if (
         bankrollValue
@@ -758,16 +963,15 @@
           );
       }
 
-
-      /* -----------------------------------------------------
-         HAND VALUE
-         ----------------------------------------------------- */
+      /*
+       * HAND VALUE
+       */
 
       if (
         handValue
       ) {
 
-        const showHandValue =
+        const shouldShow =
           phase ===
             "player-turn" ||
           phase ===
@@ -778,24 +982,26 @@
             "complete";
 
         if (
-          showHandValue &&
+          shouldShow &&
           hand &&
           hand.cards.length > 0
         ) {
+
           handValue.textContent =
             String(
               hand.value
             );
+
         } else {
+
           handValue.textContent =
             "—";
         }
       }
 
-
-      /* -----------------------------------------------------
-         ROUND STATUS
-         ----------------------------------------------------- */
+      /*
+       * STATUS
+       */
 
       let status =
         "PLACE YOUR BET";
@@ -807,19 +1013,13 @@
         case "waiting":
         case "betting":
 
-          if (
+          status =
             bet >=
             game.blackjack.minimumBet
-          ) {
-            status =
-              "READY TO DEAL";
-          } else {
-            status =
-              "PLACE YOUR BET";
-          }
+              ? "READY TO DEAL"
+              : "PLACE YOUR BET";
 
           break;
-
 
         case "initial-deal":
 
@@ -828,7 +1028,6 @@
 
           break;
 
-
         case "insurance":
 
           status =
@@ -836,22 +1035,15 @@
 
           break;
 
-
         case "player-turn":
 
-          if (
+          status =
             game.blackjack.activeSeat ===
             player.seat
-          ) {
-            status =
-              "YOUR TURN";
-          } else {
-            status =
-              "OTHER PLAYERS";
-          }
+              ? "YOUR TURN"
+              : "OTHER PLAYERS";
 
           break;
-
 
         case "dealer-turn":
 
@@ -860,14 +1052,12 @@
 
           break;
 
-
         case "settlement":
 
           status =
             "SETTLING";
 
           break;
-
 
         case "complete":
 
@@ -876,13 +1066,10 @@
 
           break;
 
-
         default:
 
           status =
             "PLACE YOUR BET";
-
-          break;
       }
 
       if (
@@ -892,10 +1079,9 @@
           status;
       }
 
-
-      /* -----------------------------------------------------
-         BETTING VISIBILITY
-         ----------------------------------------------------- */
+      /*
+       * BETTING
+       */
 
       const bettingVisible =
         phase ===
@@ -916,10 +1102,9 @@
         )
       );
 
-
-      /* -----------------------------------------------------
-         ACTION BUTTONS
-         ----------------------------------------------------- */
+      /*
+       * ACTIONS
+       */
 
       for (
         const button of
@@ -927,16 +1112,14 @@
       ) {
 
         const action =
-          button.dataset
-            .action;
+          button.dataset.action;
 
         if (!action) {
           continue;
         }
 
         const visiblePhase =
-          button.dataset
-            .visiblePhase;
+          button.dataset.visiblePhase;
 
         let visible =
           false;
@@ -954,7 +1137,6 @@
 
             break;
 
-
           case "deal":
 
             visible =
@@ -963,16 +1145,16 @@
 
             break;
 
-
-          case "insurance":
-          case "decline-insurance":
+          case "hit":
+          case "stand":
 
             visible =
               phase ===
-              "insurance";
+                "player-turn" &&
+              game.blackjack.activeSeat ===
+                player.seat;
 
             break;
-
 
           case "double":
 
@@ -983,7 +1165,6 @@
 
             break;
 
-
           case "split":
 
             visible =
@@ -992,7 +1173,6 @@
               canSplit();
 
             break;
-
 
           case "surrender":
 
@@ -1003,14 +1183,20 @@
 
             break;
 
+          case "insurance":
+          case "decline-insurance":
+
+            visible =
+              phase ===
+              "insurance";
+
+            break;
 
           default:
 
             visible =
               visiblePhase ===
               phase;
-
-            break;
         }
 
         button.classList.toggle(
@@ -1019,18 +1205,12 @@
         );
 
         button.disabled =
-          !visible ||
-          !player;
+          !visible;
       }
 
-
-      /* -----------------------------------------------------
-         BETTING BUTTONS
-         ----------------------------------------------------- */
-
-      const canAffordMinimum =
-        balance >=
-        game.blackjack.minimumBet;
+      /*
+       * BET BUTTONS
+       */
 
       const minimumBet =
         game.blackjack.minimumBet;
@@ -1038,14 +1218,9 @@
       const maximumBet =
         game.blackjack.maximumBet;
 
-      const decreaseButton =
-        actionButtons.find(
-          (
-            button
-          ) =>
-            button.dataset.action ===
-            "decrease-bet"
-        );
+      const canAffordMinimum =
+        balance >=
+        minimumBet;
 
       const increaseButton =
         actionButtons.find(
@@ -1056,23 +1231,31 @@
             "increase-bet"
         );
 
+      const decreaseButton =
+        actionButtons.find(
+          (
+            button
+          ) =>
+            button.dataset.action ===
+            "decrease-bet"
+        );
+
       if (
         increaseButton
       ) {
 
-        const canIncrease =
-          bettingVisible &&
-          tableReady &&
-          canAffordMinimum &&
-          balance > 0 &&
-          bet <
-            Math.min(
-              maximumBet,
-              balance
-            );
-
         increaseButton.disabled =
-          !canIncrease;
+          !(
+            bettingVisible &&
+            tableReady &&
+            canAffordMinimum &&
+            balance > 0 &&
+            bet <
+              Math.min(
+                maximumBet,
+                balance
+              )
+          );
       }
 
       if (
@@ -1087,10 +1270,9 @@
           );
       }
 
-
-      /* -----------------------------------------------------
-         DEAL
-         ----------------------------------------------------- */
+      /*
+       * DEAL
+       */
 
       const dealButton =
         actionButtons.find(
@@ -1115,12 +1297,11 @@
           );
       }
 
+      /*
+       * ACTION CONTAINER
+       */
 
-      /* -----------------------------------------------------
-         ACTION CONTAINER
-         ----------------------------------------------------- */
-
-      const visibleActions =
+      const anyVisibleAction =
         actionButtons.some(
           (
             button
@@ -1132,13 +1313,12 @@
 
       setHidden(
         actionControls,
-        !visibleActions
+        !anyVisibleAction
       );
     };
 
-
   /* =========================================================
-     ACTION EXECUTION
+     ACTIONS
      ========================================================= */
 
   const executeAction =
@@ -1146,11 +1326,12 @@
       action: Action
     ): void => {
 
-      if (!game) {
+      if (
+        !game ||
+        destroyed
+      ) {
         return;
       }
-
-      let result;
 
       try {
 
@@ -1159,141 +1340,77 @@
         ) {
 
           case "deal":
-            result =
-              game.deal();
+            game.deal();
             break;
 
           case "hit":
-            result =
-              game.hit();
+            game.hit();
             break;
 
           case "stand":
-            result =
-              game.stand();
+            game.stand();
             break;
 
           case "double":
-            result =
-              game.double();
+            game.double();
             break;
 
           case "split":
-            result =
-              game.split();
+            game.split();
             break;
 
           case "insurance":
-            result =
-              game.insurance();
+            game.insurance();
             break;
 
           case "decline-insurance":
-            result =
-              game.declineInsurance();
+            game.declineInsurance();
             break;
 
           case "surrender":
-            result =
-              game.surrender();
+            game.surrender();
             break;
 
           case "increase-bet":
-            result =
-              game.increaseBet(
-                5
-              );
+            game.increaseBet(5);
             break;
 
           case "decrease-bet":
-            result =
-              game.decreaseBet(
-                5
-              );
+            game.decreaseBet(5);
             break;
         }
 
-      } catch (
-        error
-      ) {
+      } catch (error) {
 
-        console.error(
+        /*
+         * An action failure must not destroy
+         * the entire table.
+         */
+        safeLog(
           `[BLACKJACK ACTION ERROR] ${action}`,
           error
         );
 
-        showFatalError(
-          error
-        );
+        if (
+          roundStatus
+        ) {
+          roundStatus.textContent =
+            "ACTION FAILED";
+        }
 
         return;
       }
 
-      if (
-        result &&
-        !result.success
-      ) {
+      try {
+        updateGameUI();
+      } catch (error) {
 
-        console.warn(
-          `Blackjack action "${action}" failed:`,
-          result.reason
+        safeLog(
+          "[BLACKJACK] UI refresh after action failed.",
+          error
         );
       }
-
-      updateGameUI();
     };
-
-
-  /* =========================================================
-     BUTTON BINDING
-     ========================================================= */
-
-  const buttonHandlers:
-    Array<{
-      button:
-        HTMLButtonElement;
-
-      handler:
-        () => void;
-    }> = [];
-
-
-  for (
-    const button of
-      actionButtons
-  ) {
-
-    const rawAction =
-      button.dataset
-        .action;
-
-    if (
-      !rawAction
-    ) {
-      continue;
-    }
-
-    const action =
-      rawAction as Action;
-
-    const handler =
-      () => {
-        executeAction(
-          action
-        );
-      };
-
-    button.addEventListener(
-      "click",
-      handler
-    );
-
-    buttonHandlers.push({
-      button,
-      handler,
-    });
-  }
-
 
   /* =========================================================
      ENGINE EVENTS
@@ -1315,35 +1432,38 @@
     "error",
   ] as const;
 
-
   const engineUnsubscribers:
     Array<() => void> = [];
-
 
   const clearEngineSubscriptions =
     (): void => {
 
-      for (
-        const unsubscribe of
-          engineUnsubscribers
+      while (
+        engineUnsubscribers.length >
+        0
       ) {
+
+        const unsubscribe =
+          engineUnsubscribers.pop();
+
+        if (
+          typeof unsubscribe !==
+          "function"
+        ) {
+          continue;
+        }
 
         try {
           unsubscribe();
-        } catch (
-          error
-        ) {
-          console.warn(
-            "[BLACKJACK] Failed to remove engine subscription.",
+        } catch (error) {
+
+          safeLog(
+            "[BLACKJACK] Engine unsubscribe failed.",
             error
           );
         }
       }
-
-      engineUnsubscribers.length =
-        0;
     };
-
 
   const subscribeToEngine =
     (): void => {
@@ -1351,7 +1471,8 @@
       clearEngineSubscriptions();
 
       if (
-        !game
+        !game ||
+        destroyed
       ) {
         return;
       }
@@ -1361,219 +1482,157 @@
           engineEventNames
       ) {
 
-        try {
+        const unsubscribe =
+          game.blackjack.on(
+            eventName,
+            () => {
 
-          const unsubscribe =
-            game.blackjack.on(
-              eventName,
-              () => {
-
-                try {
-                  updateGameUI();
-                } catch (
-                  error
-                ) {
-                  console.error(
-                    "[BLACKJACK UI UPDATE ERROR]",
-                    error
-                  );
-                }
+              if (
+                destroyed
+              ) {
+                return;
               }
-            );
 
+              try {
+                updateGameUI();
+              } catch (error) {
+
+                safeLog(
+                  `[BLACKJACK UI UPDATE ERROR] ${eventName}`,
+                  error
+                );
+              }
+            }
+          );
+
+        if (
+          typeof unsubscribe ===
+          "function"
+        ) {
           engineUnsubscribers.push(
             unsubscribe
           );
-
-        } catch (
-          error
-        ) {
-
-          console.error(
-            `[BLACKJACK] Failed to subscribe to "${eventName}".`,
-            error
-          );
-
-          throw error;
         }
       }
     };
 
-
   /* =========================================================
-     GLOBAL DEBUG HANDLE
+     BUTTONS
      ========================================================= */
 
-  const exposeDebugGame =
+  const buttonHandlers:
+    Array<{
+      button: HTMLButtonElement;
+      handler: () => void;
+    }> = [];
+
+  for (
+    const button of
+      actionButtons
+  ) {
+
+    const rawAction =
+      button.dataset.action;
+
+    if (!rawAction) {
+      continue;
+    }
+
+    const action =
+      rawAction as Action;
+
+    const handler =
+      (): void => {
+        executeAction(
+          action
+        );
+      };
+
+    button.addEventListener(
+      "click",
+      handler
+    );
+
+    buttonHandlers.push({
+      button,
+      handler,
+    });
+  }
+
+  /* =========================================================
+     CUSTOM EVENTS
+     ========================================================= */
+
+  const globalActionHandler =
     (): void => {
 
       if (
-        typeof window ===
-        "undefined"
+        destroyed
       ) {
         return;
       }
 
-      const debugWindow =
-        window as Window & {
-          blackjackGame?:
-            Game | null;
-        };
+      try {
+        updateGameUI();
+      } catch (error) {
 
-      debugWindow.blackjackGame =
-        game;
-    };
-
-
-  /* =========================================================
-     LOADING
-     ========================================================= */
-
-  const hideLoading =
-    (): void => {
-
-      if (
-        loadingScreen
-      ) {
-        loadingScreen.classList.add(
-          "loading-screen--hidden"
+        safeLog(
+          "[BLACKJACK] Global action refresh failed.",
+          error
         );
       }
     };
 
+  const visualEventNames = [
+    "blackjack:visual:card-draw",
+    "blackjack:visual:card-flip",
+    "blackjack:visual:player-action",
+    "blackjack:visual:dealer-action",
+    "blackjack:visual:settlement",
+    "blackjack:visual:round-complete",
+  ] as const;
 
-  const showLoading =
+  const visualEventHandler =
     (): void => {
 
       if (
-        loadingScreen
+        destroyed
       ) {
-        loadingScreen.classList.remove(
-          "loading-screen--hidden"
+        return;
+      }
+
+      try {
+        updateGameUI();
+      } catch (error) {
+
+        safeLog(
+          "[BLACKJACK] Visual event refresh failed.",
+          error
         );
       }
     };
 
-
   /* =========================================================
-     FATAL ERROR
+     GLOBAL ERROR LOGGING
      ========================================================= */
 
-  const showFatalError =
-    (
-      error?: unknown
-    ): void => {
-
-      console.error(
-        "[BLACKJACK FATAL ERROR]",
-        error
-      );
-
-      let message =
-        "Blackjack failed to initialize.";
-
-      let stack =
-        "";
-
-      if (
-        error instanceof Error
-      ) {
-
-        message =
-          error.message ||
-          "Unknown error.";
-
-        stack =
-          error.stack ||
-          "";
-
-      } else if (
-        typeof error ===
-        "string"
-      ) {
-
-        message =
-          error;
-
-      } else if (
-        error !== undefined
-      ) {
-
-        try {
-
-          message =
-            JSON.stringify(
-              error,
-              null,
-              2
-            );
-
-        } catch {
-
-          message =
-            String(
-              error
-            );
-        }
-      }
-
-      const diagnostic =
-        [
-          message,
-          stack
-            ? `\nSTACK:\n${stack}`
-            : ""
-        ].join("");
-
-      if (
-        gameErrorCopy
-      ) {
-        gameErrorCopy.textContent =
-          diagnostic;
-      }
-
-      if (
-        gameError
-      ) {
-        gameError.hidden =
-          false;
-      }
-
-      hideLoading();
-    };
-
-
-  const clearFatalError =
-    (): void => {
-
-      if (
-        gameError
-      ) {
-
-        gameError.hidden =
-          true;
-      }
-
-      if (
-        gameErrorCopy
-      ) {
-
-        gameErrorCopy.textContent =
-          "Blackjack failed to initialize.";
-      }
-    };
-
-
-  /* =========================================================
-     GLOBAL ERROR CAPTURE
-     ========================================================= */
+  /*
+   * IMPORTANT:
+   *
+   * Global browser errors are LOGGED only.
+   *
+   * They no longer force TABLE ERROR.
+   *
+   * The initialization try/catch below is the
+   * authoritative startup error boundary.
+   */
 
   const globalErrorHandler =
     (
       event: ErrorEvent
     ): void => {
 
-      console.error(
+      safeLog(
         "[BLACKJACK WINDOW ERROR]",
         {
           message:
@@ -1588,79 +1647,22 @@
             event.error,
         }
       );
-
-      /*
-       * Do not overwrite an already displayed initialization
-       * error with an unrelated browser error after startup.
-       */
-      if (
-        initializing ||
-        !game
-      ) {
-
-        if (
-          event.error instanceof Error
-        ) {
-
-          showFatalError(
-            event.error
-          );
-
-        } else if (
-          event.message
-        ) {
-
-          showFatalError(
-            new Error(
-              [
-                event.message,
-                event.filename
-                  ? ` at ${event.filename}:${event.lineno}:${event.colno}`
-                  : ""
-              ].join("")
-            )
-          );
-        }
-      }
     };
-
 
   const unhandledRejectionHandler =
     (
       event: PromiseRejectionEvent
     ): void => {
 
-      console.error(
+      safeLog(
         "[BLACKJACK UNHANDLED REJECTION]",
         event.reason
       );
-
-      if (
-        initializing ||
-        !game
-      ) {
-
-        if (
-          event.reason instanceof Error
-        ) {
-
-          showFatalError(
-            event.reason
-          );
-
-        } else {
-
-          showFatalError(
-            new Error(
-              String(
-                event.reason
-              )
-            )
-          );
-        }
-      }
     };
 
+  /* =========================================================
+     EVENTS
+     ========================================================= */
 
   window.addEventListener(
     "error",
@@ -1672,322 +1674,10 @@
     unhandledRejectionHandler
   );
 
-
-  /* =========================================================
-     INITIALIZATION
-     ========================================================= */
-
-  const initialize =
-    (): void => {
-
-      if (
-        initializing
-      ) {
-        return;
-      }
-
-      initializing =
-        true;
-
-      clearFatalError();
-      showLoading();
-
-
-      try {
-
-        console.info(
-          "[BLACKJACK] Initialization started."
-        );
-
-
-        /*
-         * Clean previous game instance.
-         */
-        if (
-          game
-        ) {
-
-          console.info(
-            "[BLACKJACK] Destroying previous game instance."
-          );
-
-          try {
-
-            game.destroy();
-
-          } catch (
-            destroyError
-          ) {
-
-            console.warn(
-              "[BLACKJACK] Previous game cleanup failed.",
-              destroyError
-            );
-          }
-
-          game =
-            null;
-        }
-
-
-        clearEngineSubscriptions();
-        exposeDebugGame();
-
-
-        /*
-         * Canvas validation.
-         */
-        if (
-          !canvas
-        ) {
-
-          throw new Error(
-            "Game canvas was not found."
-          );
-        }
-
-
-        if (
-          !(canvas instanceof HTMLCanvasElement)
-        ) {
-
-          throw new Error(
-            "Game canvas is not an HTMLCanvasElement."
-          );
-        }
-
-
-        const rect =
-          canvas.getBoundingClientRect();
-
-
-        if (
-          rect.width <= 0 ||
-          rect.height <= 0
-        ) {
-
-          console.warn(
-            "[BLACKJACK] Canvas has zero size during initialization.",
-            rect
-          );
-        }
-
-
-        console.info(
-          "[BLACKJACK] Canvas validated.",
-          {
-            width:
-              rect.width,
-            height:
-              rect.height,
-          }
-        );
-
-
-        /*
-         * Create Game.
-         */
-        console.info(
-          "[BLACKJACK] Creating Game..."
-        );
-
-
-        game =
-          new Game(
-            canvas
-          );
-
-
-        console.info(
-          "[BLACKJACK] Game created successfully."
-        );
-
-
-        exposeDebugGame();
-
-
-        /*
-         * Engine subscriptions.
-         */
-        subscribeToEngine();
-
-
-        console.info(
-          "[BLACKJACK] Engine subscriptions ready."
-        );
-
-
-        /*
-         * First UI sync.
-         */
-        updateGameUI();
-
-
-        console.info(
-          "[BLACKJACK] Initial UI sync complete."
-        );
-
-
-        /*
-         * Finish cinematic loading.
-         */
-        window.setTimeout(
-          () => {
-
-            if (
-              !game
-            ) {
-              return;
-            }
-
-            hideLoading();
-
-            updateGameUI();
-
-          },
-          950
-        );
-
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          "[BLACKJACK] INITIALIZATION FAILED",
-          error
-        );
-
-
-        /*
-         * Keep the real error visible before
-         * clearing the game reference.
-         */
-        showFatalError(
-          error
-        );
-
-
-        clearEngineSubscriptions();
-
-
-        try {
-
-          game?.destroy();
-
-        } catch (
-          destroyError
-        ) {
-
-          console.warn(
-            "[BLACKJACK] Failed to destroy broken game instance.",
-            destroyError
-          );
-        }
-
-
-        game =
-          null;
-
-
-        exposeDebugGame();
-
-      } finally {
-
-        initializing =
-          false;
-      }
-    };
-
-
-  /* =========================================================
-     RETRY
-     ========================================================= */
-
-  const retryHandler =
-    (): void => {
-
-      if (
-        initializing
-      ) {
-        return;
-      }
-
-      initialize();
-    };
-
-
-  retryButton?.addEventListener(
-    "click",
-    retryHandler
-  );
-
-
-  /* =========================================================
-     GLOBAL GAME ACTION REFRESH
-     ========================================================= */
-
-  const globalActionHandler =
-    (): void => {
-
-      try {
-
-        updateGameUI();
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          "[BLACKJACK] Global action refresh failed.",
-          error
-        );
-
-        showFatalError(
-          error
-        );
-      }
-    };
-
-
   window.addEventListener(
     "blackjack:action",
     globalActionHandler
   );
-
-
-  /* =========================================================
-     VISUAL EVENTS
-     ========================================================= */
-
-  const visualEventHandler =
-    (): void => {
-
-      try {
-
-        updateGameUI();
-
-      } catch (
-        error
-      ) {
-
-        console.error(
-          "[BLACKJACK] Visual event refresh failed.",
-          error
-        );
-      }
-    };
-
-
-  const visualEventNames = [
-    "blackjack:visual:card-draw",
-    "blackjack:visual:card-flip",
-    "blackjack:visual:player-action",
-    "blackjack:visual:dealer-action",
-    "blackjack:visual:settlement",
-    "blackjack:visual:round-complete",
-  ] as const;
-
 
   for (
     const eventName of
@@ -2000,211 +1690,405 @@
     );
   }
 
+  /* =========================================================
+     RETRY
+     ========================================================= */
+
+  function retryHandler():
+    void {
+
+    if (
+      initializing ||
+      destroyed
+    ) {
+      return;
+    }
+
+    initialize();
+  }
+
+  retryButton?.addEventListener(
+    "click",
+    retryHandler
+  );
+
+  /* =========================================================
+     DESTROY
+     ========================================================= */
+
+  function destroy():
+    void {
+
+    if (
+      destroyed
+    ) {
+      return;
+    }
+
+    destroyed =
+      true;
+
+    clearEngineSubscriptions();
+
+    for (
+      const item of
+        buttonHandlers
+    ) {
+
+      try {
+        item.button.removeEventListener(
+          "click",
+          item.handler
+        );
+      } catch {
+        /* ignore cleanup failure */
+      }
+    }
+
+    retryButton?.removeEventListener(
+      "click",
+      retryHandler
+    );
+
+    window.removeEventListener(
+      "error",
+      globalErrorHandler
+    );
+
+    window.removeEventListener(
+      "unhandledrejection",
+      unhandledRejectionHandler
+    );
+
+    window.removeEventListener(
+      "blackjack:action",
+      globalActionHandler
+    );
+
+    for (
+      const eventName of
+        visualEventNames
+    ) {
+
+      window.removeEventListener(
+        eventName,
+        visualEventHandler
+      );
+    }
+
+    try {
+      game?.destroy();
+    } catch (error) {
+
+      safeLog(
+        "[BLACKJACK] Game cleanup failed.",
+        error
+      );
+    }
+
+    game =
+      null;
+
+    runtimeWindow.__BLACKJACK_GAME_INSTANCE__ =
+      null;
+  }
 
   /* =========================================================
      INITIALIZE
      ========================================================= */
 
-  initialize();
+  function initialize():
+    void {
 
+    if (
+      initializing ||
+      destroyed
+    ) {
+      return;
+    }
 
-  /* =========================================================
-     CLEANUP
-     ========================================================= */
+    initializing =
+      true;
 
-  window.addEventListener(
-    "pagehide",
-    () => {
+    clearFatalError();
+    showLoading();
 
-      window.removeEventListener(
-        "error",
-        globalErrorHandler
+    try {
+
+      console.info(
+        "[BLACKJACK] Initialization started."
       );
 
-      window.removeEventListener(
-        "unhandledrejection",
-        unhandledRejectionHandler
-      );
-
-      window.removeEventListener(
-        "blackjack:action",
-        globalActionHandler
-      );
-
-
-      for (
-        const eventName of
-          visualEventNames
+      /*
+       * Remove old game instance.
+       */
+      if (
+        game
       ) {
 
-        window.removeEventListener(
-          eventName,
-          visualEventHandler
+        console.info(
+          "[BLACKJACK] Destroying previous game instance."
         );
+
+        try {
+          game.destroy();
+        } catch (error) {
+
+          safeLog(
+            "[BLACKJACK] Previous game cleanup failed.",
+            error
+          );
+        }
+
+        game =
+          null;
       }
-
-
-      for (
-        const item of
-          buttonHandlers
-      ) {
-
-        item.button.removeEventListener(
-          "click",
-          item.handler
-        );
-      }
-
-
-      retryButton?.removeEventListener(
-        "click",
-        retryHandler
-      );
-
 
       clearEngineSubscriptions();
+      exposeDebugGame();
 
+      /*
+       * Canvas.
+       */
+      if (
+        !canvas
+      ) {
+        throw new Error(
+          "Game canvas was not found."
+        );
+      }
 
-      try {
+      if (
+        !(canvas instanceof HTMLCanvasElement)
+      ) {
+        throw new Error(
+          "Game canvas is not an HTMLCanvasElement."
+        );
+      }
 
-        game?.destroy();
+      const rect =
+        canvas.getBoundingClientRect();
 
-      } catch (
-        error
+      console.info(
+        "[BLACKJACK] Canvas validated.",
+        {
+          width:
+            rect.width,
+          height:
+            rect.height,
+        }
+      );
+
+      /*
+       * Zero size is a warning, not fatal.
+       */
+      if (
+        rect.width <= 0 ||
+        rect.height <= 0
       ) {
 
         console.warn(
-          "[BLACKJACK] Cleanup failed.",
-          error
+          "[BLACKJACK] Canvas has zero size during initialization."
         );
       }
 
+      /*
+       * Create Game.
+       *
+       * Game.ts itself already owns:
+       *   - Renderer
+       *   - Animation
+       *   - Input
+       *   - Resize
+       *   - Main loop
+       *   - Intro
+       */
+      console.info(
+        "[BLACKJACK] Creating Game..."
+      );
+
+      game =
+        new Game(
+          canvas
+        );
+
+      console.info(
+        "[BLACKJACK] Game created successfully."
+      );
+
+      exposeDebugGame();
+
+      /*
+       * Subscribe.
+       */
+      subscribeToEngine();
+
+      console.info(
+        "[BLACKJACK] Engine subscriptions ready."
+      );
+
+      /*
+       * Initial UI.
+       */
+      updateGameUI();
+
+      console.info(
+        "[BLACKJACK] Initial UI sync complete."
+      );
+
+      /*
+       * IMPORTANT:
+       *
+       * If Game creation and UI synchronization
+       * succeeded, initialization is successful.
+       */
+      clearFatalError();
+
+      console.info(
+        "[BLACKJACK] Startup completed successfully."
+      );
+
+      /*
+       * Finish loading overlay after the
+       * first visual intro window.
+       */
+      window.setTimeout(
+        () => {
+
+          if (
+            destroyed ||
+            !game ||
+            fatalVisible
+          ) {
+            return;
+          }
+
+          hideLoading();
+
+          try {
+            updateGameUI();
+          } catch (error) {
+
+            safeLog(
+              "[BLACKJACK] Final UI refresh failed.",
+              error
+            );
+          }
+
+        },
+        950
+      );
+
+    } catch (error) {
+
+      safeLog(
+        "[BLACKJACK] INITIALIZATION FAILED",
+        error
+      );
+
+      clearEngineSubscriptions();
+
+      try {
+        game?.destroy();
+      } catch (destroyError) {
+
+        safeLog(
+          "[BLACKJACK] Failed to destroy broken Game instance.",
+          destroyError
+        );
+      }
 
       game =
         null;
 
-
       exposeDebugGame();
-    },
+
+      showFatalError(
+        error
+      );
+
+    } finally {
+
+      initializing =
+        false;
+    }
+  }
+
+  /* =========================================================
+     START
+     ========================================================= */
+
+  initialize();
+
+  /* =========================================================
+     PAGE LIFECYCLE
+     ========================================================= */
+
+  window.addEventListener(
+    "pagehide",
+    destroy,
     {
-      once:
-        true,
+      once: true,
     }
   );
 </script>
 
 <style>
   :global(:root) {
-    --black:
-      #020403;
-
-    --black-deep:
-      #010201;
-
-    --green-deep:
-      #051b15;
-
-    --green:
-      #0b392b;
-
-    --green-light:
-      #124838;
-
-    --gold-dark:
-      #72582b;
-
-    --gold:
-      #c5a35c;
-
-    --gold-bright:
-      #e1c777;
-
-    --ivory:
-      #e7e1d3;
-
-    --muted:
-      rgba(
-        231,
-        225,
-        211,
-        0.36
-      );
-
-    --pixel-border:
-      rgba(
-        197,
-        163,
-        92,
-        0.20
-      );
+    --black: #020403;
+    --black-deep: #010201;
+    --green-deep: #051b15;
+    --green: #0b392b;
+    --green-light: #124838;
+    --gold-dark: #72582b;
+    --gold: #c5a35c;
+    --gold-bright: #e1c777;
+    --ivory: #e7e1d3;
+    --muted: rgba(231, 225, 211, 0.36);
+    --pixel-border: rgba(197, 163, 92, 0.20);
   }
 
+  :global([hidden]) {
+    display: none !important;
+  }
 
   .casino-shell {
-    position:
-      fixed;
+    position: fixed;
+    inset: 0;
 
-    inset:
-      0;
+    width: 100vw;
+    height: 100vh;
 
-    width:
-      100vw;
+    min-width: 320px;
+    min-height: 100dvh;
 
-    height:
-      100vh;
+    overflow: hidden;
 
-    min-width:
-      320px;
-
-    min-height:
-      100dvh;
-
-    overflow:
-      hidden;
-
-    background:
-      var(--black);
-
-    color:
-      var(--ivory);
+    background: var(--black);
+    color: var(--ivory);
 
     font-family:
       "Courier New",
       Courier,
       monospace;
 
-    isolation:
-      isolate;
+    isolation: isolate;
+    user-select: none;
+    touch-action: none;
 
-    user-select:
-      none;
+    -webkit-font-smoothing: none;
 
-    touch-action:
-      none;
-
-    -webkit-font-smoothing:
-      none;
-
-    image-rendering:
-      pixelated;
+    image-rendering: pixelated;
   }
 
-
   .game-stage {
-    position:
-      absolute;
+    position: absolute;
+    inset: 0;
 
-    inset:
-      0;
+    width: 100%;
+    height: 100%;
 
-    width:
-      100%;
-
-    height:
-      100%;
-
-    overflow:
-      hidden;
+    overflow: hidden;
 
     background:
       linear-gradient(
@@ -2214,67 +2098,40 @@
       );
   }
 
-
   .game-canvas {
-    position:
-      absolute;
+    position: absolute;
+    inset: 0;
 
-    inset:
-      0;
+    width: 100%;
+    height: 100%;
 
-    width:
-      100%;
+    display: block;
 
-    height:
-      100%;
+    border: 0;
+    outline: 0;
 
-    display:
-      block;
+    background: #020403;
 
-    border:
-      0;
-
-    outline:
-      0;
-
-    image-rendering:
-      pixelated;
-
-    image-rendering:
-      crisp-edges;
-
-    background:
-      #020403;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
   }
 
-
   .ambient-info {
-    position:
-      absolute;
+    position: absolute;
 
-    top:
-      19px;
+    top: 19px;
 
-    z-index:
-      70;
+    z-index: 70;
 
-    pointer-events:
-      none;
+    pointer-events: none;
 
-    opacity:
-      0.52;
+    opacity: 0.52;
 
-    font-size:
-      7px;
+    font-size: 7px;
+    line-height: 1;
+    letter-spacing: 2px;
 
-    line-height:
-      1;
-
-    letter-spacing:
-      2px;
-
-    text-transform:
-      uppercase;
+    text-transform: uppercase;
 
     color:
       rgba(
@@ -2294,16 +2151,12 @@
       );
   }
 
-
   .ambient-info--left {
-    left:
-      21px;
+    left: 21px;
   }
 
-
   .ambient-info--right {
-    right:
-      21px;
+    right: 21px;
 
     color:
       rgba(
@@ -2314,40 +2167,25 @@
       );
   }
 
-
   .player-foreground {
-    position:
-      absolute;
+    position: absolute;
 
-    left:
-      0;
+    left: 0;
+    right: 0;
+    bottom: 0;
 
-    right:
-      0;
+    z-index: 60;
 
-    bottom:
-      0;
+    height: 19%;
 
-    z-index:
-      60;
-
-    height:
-      19%;
-
-    pointer-events:
-      none;
+    pointer-events: none;
   }
 
-
   .player-seat-shadow {
-    position:
-      absolute;
+    position: absolute;
 
-    left:
-      50%;
-
-    bottom:
-      -22px;
+    left: 50%;
+    bottom: -22px;
 
     width:
       min(
@@ -2355,8 +2193,7 @@
         74vw
       );
 
-    height:
-      110px;
+    height: 110px;
 
     transform:
       translateX(-50%);
@@ -2382,17 +2219,13 @@
         72%
       );
 
-    opacity:
-      0.54;
+    opacity: 0.54;
   }
 
-
   .player-forearm {
-    position:
-      absolute;
+    position: absolute;
 
-    bottom:
-      -15px;
+    bottom: -15px;
 
     width:
       clamp(
@@ -2425,8 +2258,7 @@
         )
       );
 
-    opacity:
-      0.24;
+    opacity: 0.24;
 
     filter:
       blur(
@@ -2434,10 +2266,8 @@
       );
   }
 
-
   .player-forearm--left {
-    left:
-      -40px;
+    left: -40px;
 
     transform:
       rotate(
@@ -2456,10 +2286,8 @@
       );
   }
 
-
   .player-forearm--right {
-    right:
-      -40px;
+    right: -40px;
 
     transform:
       rotate(
@@ -2478,37 +2306,25 @@
       );
   }
 
-
   .game-info {
-    position:
-      absolute;
+    position: absolute;
 
-    left:
-      22px;
+    left: 22px;
+    bottom: 108px;
 
-    bottom:
-      108px;
+    z-index: 80;
 
-    z-index:
-      80;
+    display: flex;
 
-    display:
-      flex;
+    flex-direction: column;
 
-    flex-direction:
-      column;
+    gap: 3px;
 
-    gap:
-      3px;
+    pointer-events: none;
 
-    pointer-events:
-      none;
+    min-width: 72px;
 
-    min-width:
-      72px;
-
-    opacity:
-      0.78;
+    opacity: 0.78;
 
     text-shadow:
       1px 1px 0
@@ -2520,30 +2336,19 @@
       );
   }
 
-
   .game-info-row {
-    display:
-      flex;
+    display: flex;
 
-    align-items:
-      baseline;
+    align-items: baseline;
 
-    justify-content:
-      space-between;
+    justify-content: space-between;
 
-    gap:
-      12px;
+    gap: 12px;
 
-    font-size:
-      6px;
-
-    line-height:
-      1;
-
-    letter-spacing:
-      1.2px;
+    font-size: 6px;
+    line-height: 1;
+    letter-spacing: 1.2px;
   }
-
 
   .game-info-label {
     color:
@@ -2555,7 +2360,6 @@
       );
   }
 
-
   .game-info-row strong {
     color:
       rgba(
@@ -2565,23 +2369,16 @@
         0.72
       );
 
-    font-weight:
-      700;
+    font-weight: 700;
   }
 
-
   .game-info-value {
-    margin-top:
-      3px;
+    margin-top: 3px;
 
-    font-size:
-      14px;
+    font-size: 14px;
+    line-height: 1;
 
-    line-height:
-      1;
-
-    text-align:
-      left;
+    text-align: left;
 
     color:
       rgba(
@@ -2592,19 +2389,13 @@
       );
   }
 
-
   .round-status {
-    position:
-      absolute;
+    position: absolute;
 
-    top:
-      53%;
+    top: 53%;
+    left: 50%;
 
-    left:
-      50%;
-
-    z-index:
-      82;
+    z-index: 82;
 
     transform:
       translate(
@@ -2612,20 +2403,13 @@
         -50%
       );
 
-    pointer-events:
-      none;
+    pointer-events: none;
 
-    white-space:
-      nowrap;
+    white-space: nowrap;
 
-    font-size:
-      6px;
-
-    line-height:
-      1;
-
-    letter-spacing:
-      2px;
+    font-size: 6px;
+    line-height: 1;
+    letter-spacing: 2px;
 
     color:
       rgba(
@@ -2645,46 +2429,31 @@
       );
   }
 
-
   .bet-controls {
-    position:
-      absolute;
+    position: absolute;
 
-    left:
-      50%;
+    left: 50%;
+    bottom: 8.8%;
 
-    bottom:
-      8.8%;
-
-    z-index:
-      84;
+    z-index: 84;
 
     transform:
       translateX(-50%);
 
-    display:
-      flex;
+    display: flex;
 
-    align-items:
-      center;
+    align-items: center;
+    justify-content: center;
 
-    justify-content:
-      center;
+    gap: 8px;
 
-    gap:
-      8px;
-
-    opacity:
-      0.78;
+    opacity: 0.78;
   }
 
-
   .bet-amount {
-    min-width:
-      62px;
+    min-width: 62px;
 
-    padding:
-      5px 8px;
+    padding: 5px 8px;
 
     border-top:
       1px solid
@@ -2704,8 +2473,7 @@
         0.12
       );
 
-    text-align:
-      center;
+    text-align: center;
 
     color:
       rgba(
@@ -2715,14 +2483,9 @@
         0.68
       );
 
-    font-size:
-      7px;
-
-    line-height:
-      1;
-
-    letter-spacing:
-      1.5px;
+    font-size: 7px;
+    line-height: 1;
+    letter-spacing: 1.5px;
 
     background:
       rgba(
@@ -2731,65 +2494,39 @@
         4,
         0.24
       );
-
-    box-shadow:
-      inset 0 0 12px
-      rgba(
-        0,
-        0,
-        0,
-        0.18
-      );
   }
 
-
   .action-controls {
-    position:
-      absolute;
+    position: absolute;
 
-    left:
-      50%;
+    left: 50%;
+    bottom: 2.5%;
 
-    bottom:
-      2.5%;
-
-    z-index:
-      85;
+    z-index: 85;
 
     transform:
       translateX(-50%);
 
-    display:
-      flex;
+    display: flex;
 
-    align-items:
-      center;
+    align-items: center;
+    justify-content: center;
 
-    justify-content:
-      center;
-
-    gap:
-      5px;
+    gap: 5px;
 
     max-width:
       calc(
         100vw - 24px
       );
 
-    pointer-events:
-      auto;
+    pointer-events: auto;
   }
 
-
   .table-button {
-    min-width:
-      48px;
+    min-width: 48px;
+    height: 23px;
 
-    height:
-      23px;
-
-    padding:
-      0 8px;
+    padding: 0 8px;
 
     border:
       1px solid
@@ -2800,8 +2537,7 @@
         0.18
       );
 
-    outline:
-      none;
+    outline: none;
 
     background:
       rgba(
@@ -2824,41 +2560,18 @@
       "Courier New",
       monospace;
 
-    letter-spacing:
-      1.3px;
+    letter-spacing: 1.3px;
 
-    text-transform:
-      uppercase;
+    text-transform: uppercase;
 
-    cursor:
-      pointer;
-
-    image-rendering:
-      pixelated;
+    cursor: pointer;
 
     transition:
-      background
-        90ms steps(
-          2,
-          end
-        ),
-      border-color
-        90ms steps(
-          2,
-          end
-        ),
-      color
-        90ms steps(
-          2,
-          end
-        ),
-      transform
-        90ms steps(
-          2,
-          end
-        );
+      background 90ms steps(2, end),
+      border-color 90ms steps(2, end),
+      color 90ms steps(2, end),
+      transform 90ms steps(2, end);
   }
-
 
   .table-button:hover:not(:disabled) {
     border-color:
@@ -2886,14 +2599,12 @@
       );
   }
 
-
   .table-button:active:not(:disabled) {
     transform:
       translateY(
         1px
       );
   }
-
 
   .table-button:focus-visible {
     border-color:
@@ -2905,8 +2616,7 @@
       );
 
     box-shadow:
-      0 0 0
-      1px
+      0 0 0 1px
       rgba(
         231,
         209,
@@ -2915,30 +2625,19 @@
       );
   }
 
-
   .table-button:disabled {
-    opacity:
-      0.24;
-
-    cursor:
-      default;
+    opacity: 0.24;
+    cursor: default;
   }
-
 
   .table-button--bet {
-    min-width:
-      22px;
+    min-width: 22px;
+    width: 22px;
 
-    width:
-      22px;
+    padding: 0;
 
-    padding:
-      0;
-
-    font-size:
-      9px;
+    font-size: 9px;
   }
-
 
   .table-button--danger {
     border-color:
@@ -2958,7 +2657,6 @@
       );
   }
 
-
   .table-button--danger:hover:not(:disabled) {
     border-color:
       rgba(
@@ -2977,58 +2675,37 @@
       );
   }
 
-
   .is-hidden {
-    display:
-      none !important;
+    display: none !important;
   }
 
-
   .table-atmosphere-mark {
-    position:
-      absolute;
+    position: absolute;
 
-    left:
-      50%;
+    left: 50%;
+    bottom: 7.4%;
 
-    bottom:
-      7.4%;
-
-    z-index:
-      80;
+    z-index: 80;
 
     transform:
       translateX(-50%);
 
-    display:
-      flex;
+    display: flex;
 
-    align-items:
-      center;
+    align-items: center;
+    justify-content: center;
 
-    justify-content:
-      center;
+    gap: 10px;
 
-    gap:
-      10px;
+    pointer-events: none;
 
-    pointer-events:
-      none;
+    opacity: 0.33;
 
-    opacity:
-      0.33;
+    white-space: nowrap;
 
-    white-space:
-      nowrap;
-
-    font-size:
-      6px;
-
-    line-height:
-      1;
-
-    letter-spacing:
-      1.35px;
+    font-size: 6px;
+    line-height: 1;
+    letter-spacing: 1.35px;
 
     color:
       rgba(
@@ -3048,21 +2725,15 @@
       );
   }
 
-
   .table-atmosphere-mark i {
-    width:
-      2px;
+    width: 2px;
+    height: 2px;
 
-    height:
-      2px;
-
-    display:
-      block;
+    display: block;
 
     background:
       var(--gold);
   }
-
 
   .table-atmosphere-mark
     span:first-child {
@@ -3075,19 +2746,13 @@
       );
   }
 
-
   .scene-vignette {
-    position:
-      absolute;
+    position: absolute;
+    inset: 0;
 
-    inset:
-      0;
+    z-index: 90;
 
-    z-index:
-      90;
-
-    pointer-events:
-      none;
+    pointer-events: none;
 
     background:
       radial-gradient(
@@ -3123,19 +2788,13 @@
       );
   }
 
-
   .scene-edge {
-    position:
-      absolute;
+    position: absolute;
+    inset: 0;
 
-    inset:
-      0;
+    z-index: 91;
 
-    z-index:
-      91;
-
-    pointer-events:
-      none;
+    pointer-events: none;
 
     border:
       1px solid
@@ -3156,97 +2815,56 @@
       );
   }
 
-
   .loading-screen {
-    position:
-      fixed;
+    position: fixed;
+    inset: 0;
 
-    inset:
-      0;
+    z-index: 500;
 
-    z-index:
-      500;
+    display: flex;
 
-    display:
-      flex;
+    align-items: center;
+    justify-content: center;
 
-    align-items:
-      center;
+    flex-direction: column;
 
-    justify-content:
-      center;
+    gap: 22px;
 
-    flex-direction:
-      column;
+    background: #020403;
 
-    gap:
-      22px;
-
-    background:
-      #020403;
-
-    opacity:
-      1;
-
-    visibility:
-      visible;
+    opacity: 1;
+    visibility: visible;
 
     transition:
-      opacity
-        480ms steps(
-          5,
-          end
-        ),
-      visibility
-        480ms steps(
-          5,
-          end
-        );
+      opacity 480ms steps(5, end),
+      visibility 480ms steps(5, end);
 
-    pointer-events:
-      all;
+    pointer-events: all;
   }
-
 
   .loading-screen--hidden {
-    opacity:
-      0;
-
-    visibility:
-      hidden;
-
-    pointer-events:
-      none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
   }
-
 
   .loading-mark {
-    display:
-      flex;
+    display: flex;
 
-    align-items:
-      center;
+    align-items: center;
+    justify-content: center;
 
-    justify-content:
-      center;
+    flex-direction: column;
 
-    flex-direction:
-      column;
-
-    gap:
-      8px;
+    gap: 8px;
   }
-
 
   .loading-suit {
     color:
       var(--gold-bright);
 
-    font-size:
-      29px;
-
-    line-height:
-      1;
+    font-size: 29px;
+    line-height: 1;
 
     text-shadow:
       2px 2px 0
@@ -3258,27 +2876,17 @@
       );
   }
 
-
   .loading-copy {
-    display:
-      flex;
+    display: flex;
 
-    align-items:
-      center;
+    align-items: center;
+    flex-direction: column;
 
-    flex-direction:
-      column;
+    gap: 4px;
 
-    gap:
-      4px;
-
-    line-height:
-      1;
-
-    text-align:
-      center;
+    line-height: 1;
+    text-align: center;
   }
-
 
   .loading-copy span {
     color:
@@ -3289,13 +2897,9 @@
         0.66
       );
 
-    font-size:
-      7px;
-
-    letter-spacing:
-      3px;
+    font-size: 7px;
+    letter-spacing: 3px;
   }
-
 
   .loading-copy strong {
     color:
@@ -3306,13 +2910,9 @@
         0.84
       );
 
-    font-size:
-      14px;
-
-    letter-spacing:
-      2px;
+    font-size: 14px;
+    letter-spacing: 2px;
   }
-
 
   .loading-bar {
     width:
@@ -3321,11 +2921,9 @@
         48vw
       );
 
-    height:
-      2px;
+    height: 2px;
 
-    overflow:
-      hidden;
+    overflow: hidden;
 
     background:
       rgba(
@@ -3336,13 +2934,9 @@
       );
   }
 
-
   .loading-bar-fill {
-    width:
-      0;
-
-    height:
-      100%;
+    width: 0;
+    height: 100%;
 
     background:
       var(--gold);
@@ -3350,45 +2944,30 @@
     animation:
       loading-fill
       820ms
-      steps(
-        10,
-        end
-      )
+      steps(10, end)
       forwards;
   }
 
-
   @keyframes loading-fill {
     from {
-      width:
-        0;
+      width: 0;
     }
 
     to {
-      width:
-        100%;
+      width: 100%;
     }
   }
 
-
   .game-error {
-    position:
-      fixed;
+    position: fixed;
+    inset: 0;
 
-    inset:
-      0;
+    z-index: 600;
 
-    z-index:
-      600;
+    display: grid;
+    place-items: center;
 
-    display:
-      grid;
-
-    place-items:
-      center;
-
-    padding:
-      20px;
+    padding: 20px;
 
     background:
       rgba(
@@ -3399,6 +2978,9 @@
       );
   }
 
+  .game-error[hidden] {
+    display: none !important;
+  }
 
   .game-error-inner {
     width:
@@ -3414,20 +2996,14 @@
         100vh - 32px
       );
 
-    padding:
-      20px;
+    padding: 20px;
 
-    display:
-      flex;
+    display: flex;
 
-    align-items:
-      center;
+    align-items: center;
+    flex-direction: column;
 
-    flex-direction:
-      column;
-
-    gap:
-      8px;
+    gap: 8px;
 
     border:
       1px solid
@@ -3455,26 +3031,17 @@
         0.48
       );
 
-    text-align:
-      center;
+    text-align: center;
 
-    overflow:
-      hidden;
+    overflow: hidden;
   }
 
-
   .game-error-mark {
-    width:
-      24px;
+    width: 24px;
+    height: 24px;
 
-    height:
-      24px;
-
-    display:
-      grid;
-
-    place-items:
-      center;
+    display: grid;
+    place-items: center;
 
     border:
       1px solid
@@ -3498,10 +3065,8 @@
       "Courier New",
       monospace;
 
-    flex:
-      0 0 auto;
+    flex: 0 0 auto;
   }
-
 
   .game-error-inner strong {
     color:
@@ -3512,35 +3077,23 @@
         0.82
       );
 
-    font-size:
-      9px;
-
-    letter-spacing:
-      2px;
+    font-size: 9px;
+    letter-spacing: 2px;
   }
 
-
   .game-error-inner small {
-    width:
-      100%;
+    width: 100%;
 
-    max-width:
-      680px;
+    max-width: 680px;
+    max-height: 48vh;
 
-    max-height:
-      48vh;
+    overflow: auto;
 
-    overflow:
-      auto;
+    white-space: pre-wrap;
 
-    white-space:
-      pre-wrap;
+    text-align: left;
 
-    text-align:
-      left;
-
-    overflow-wrap:
-      anywhere;
+    overflow-wrap: anywhere;
 
     color:
       rgba(
@@ -3556,8 +3109,7 @@
       Courier,
       monospace;
 
-    padding:
-      10px;
+    padding: 10px;
 
     border:
       1px solid
@@ -3575,21 +3127,13 @@
         0,
         0.20
       );
-
-    box-sizing:
-      border-box;
   }
 
-
   .game-button-retry {
-    margin-top:
-      6px;
+    margin-top: 6px;
 
-    min-width:
-      88px;
-
-    height:
-      24px;
+    min-width: 88px;
+    height: 24px;
 
     border:
       1px solid
@@ -3621,16 +3165,12 @@
       "Courier New",
       monospace;
 
-    letter-spacing:
-      1.4px;
+    letter-spacing: 1.4px;
 
-    cursor:
-      pointer;
+    cursor: pointer;
 
-    flex:
-      0 0 auto;
+    flex: 0 0 auto;
   }
-
 
   .game-button-retry:hover {
     border-color:
@@ -3650,56 +3190,37 @@
       );
   }
 
-
   @media (
     max-width: 800px
   ) {
 
     .ambient-info {
-      top:
-        13px;
-
-      font-size:
-        6px;
-
-      letter-spacing:
-        1.5px;
+      top: 13px;
+      font-size: 6px;
+      letter-spacing: 1.5px;
     }
-
 
     .ambient-info--left {
-      left:
-        13px;
+      left: 13px;
     }
-
 
     .ambient-info--right {
-      right:
-        13px;
+      right: 13px;
     }
-
 
     .player-foreground {
-      height:
-        14%;
+      height: 14%;
     }
-
 
     .game-info {
-      left:
-        13px;
-
-      bottom:
-        82px;
+      left: 13px;
+      bottom: 82px;
     }
 
-
     .action-controls {
-      bottom:
-        2%;
+      bottom: 2%;
 
-      gap:
-        4px;
+      gap: 4px;
 
       max-width:
         calc(
@@ -3707,104 +3228,66 @@
         );
     }
 
-
     .table-button {
-      min-width:
-        41px;
+      min-width: 41px;
+      height: 22px;
 
-      height:
-        22px;
+      padding: 0 6px;
 
-      padding:
-        0 6px;
-
-      font-size:
-        5px;
-
-      letter-spacing:
-        1px;
+      font-size: 5px;
+      letter-spacing: 1px;
     }
-
 
     .bet-controls {
-      bottom:
-        8.2%;
+      bottom: 8.2%;
     }
-
 
     .table-atmosphere-mark {
-      bottom:
-        5.6%;
+      bottom: 5.6%;
 
-      gap:
-        7px;
+      gap: 7px;
 
-      font-size:
-        5px;
-
-      letter-spacing:
-        0.9px;
+      font-size: 5px;
+      letter-spacing: 0.9px;
     }
   }
-
 
   @media (
     max-width: 520px
   ) {
 
     .ambient-info {
-      opacity:
-        0.28;
+      opacity: 0.28;
     }
-
 
     .ambient-info--right {
-      display:
-        none;
+      display: none;
     }
-
 
     .player-forearm {
-      opacity:
-        0.18;
+      opacity: 0.18;
     }
-
 
     .game-info {
-      left:
-        10px;
-
-      bottom:
-        76px;
-
-      min-width:
-        66px;
+      left: 10px;
+      bottom: 76px;
+      min-width: 66px;
     }
-
 
     .game-info-row {
-      font-size:
-        5px;
+      font-size: 5px;
     }
-
 
     .game-info-value {
-      font-size:
-        12px;
+      font-size: 12px;
     }
-
 
     .round-status {
-      top:
-        52%;
+      top: 52%;
 
-      font-size:
-        5px;
-
-      letter-spacing:
-        1.4px;
+      font-size: 5px;
+      letter-spacing: 1.4px;
     }
-
 
     .scene-vignette {
       background:
@@ -3841,106 +3324,75 @@
         );
     }
 
-
     .table-atmosphere-mark {
-      display:
-        none;
+      display: none;
     }
-
 
     .loading-copy strong {
-      font-size:
-        12px;
+      font-size: 12px;
     }
 
-
     .action-controls {
-      left:
-        50%;
+      left: 50%;
 
       width:
         calc(
           100% - 12px
         );
 
-      flex-wrap:
-        nowrap;
+      flex-wrap: nowrap;
 
-      overflow:
-        hidden;
+      overflow: hidden;
     }
-
 
     .table-button {
-      flex:
-        1 1 auto;
+      flex: 1 1 auto;
+      min-width: 0;
 
-      min-width:
-        0;
-
-      padding:
-        0 4px;
+      padding: 0 4px;
     }
-
 
     .bet-controls {
-      bottom:
-        9.5%;
+      bottom: 9.5%;
     }
   }
-
 
   @media (
     max-height: 620px
   ) {
 
     .game-info {
-      bottom:
-        74px;
+      bottom: 74px;
     }
-
 
     .bet-controls {
-      bottom:
-        8%;
+      bottom: 8%;
     }
-
 
     .action-controls {
-      bottom:
-        1.5%;
+      bottom: 1.5%;
     }
-
 
     .table-atmosphere-mark {
-      display:
-        none;
+      display: none;
     }
   }
-
 
   @media (
     prefers-reduced-motion: reduce
   ) {
 
     .loading-bar-fill {
-      animation:
-        none;
-
-      width:
-        100%;
+      animation: none;
+      width: 100%;
     }
-
 
     .loading-screen {
-      transition:
-        none;
+      transition: none;
     }
 
-
     .table-button {
-      transition:
-        none;
+      transition: none;
     }
   }
 </style>

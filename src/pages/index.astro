@@ -57,208 +57,7 @@ const pageDescription =
       aria-label="Blackjack 21 first-person casino table"
     >
       <Game />
-
-      <div
-        id="boot-overlay"
-        class="boot-overlay"
-        aria-live="polite"
-      >
-        <div class="boot-content">
-          <div
-            class="boot-symbol"
-            aria-hidden="true"
-          >
-            ♠
-          </div>
-
-          <div class="boot-label">
-            BLACKJACK 21
-          </div>
-
-          <div class="boot-divider"></div>
-
-          <div
-            id="boot-text"
-            class="boot-text"
-          >
-            ENTERING TABLE
-          </div>
-
-          <div
-            class="boot-progress"
-            aria-hidden="true"
-          >
-            <span></span>
-          </div>
-        </div>
-      </div>
-
-      <div
-        id="fatal-error"
-        class="fatal-error"
-        role="alert"
-        aria-live="assertive"
-      >
-        <div class="fatal-panel">
-          <div class="fatal-title">
-            TABLE ERROR
-          </div>
-
-          <div
-            id="fatal-message"
-            class="fatal-message"
-          >
-            Unable to initialize Blackjack.
-          </div>
-        </div>
-      </div>
     </main>
-
-    <script>
-      type BlackjackWindow = Window & {
-        __BLACKJACK_INDEX_READY__?: boolean;
-      };
-
-      const runtimeWindow =
-        window as BlackjackWindow;
-
-      const bootOverlay =
-        document.getElementById(
-          "boot-overlay"
-        );
-
-      const bootText =
-        document.getElementById(
-          "boot-text"
-        );
-
-      const fatalError =
-        document.getElementById(
-          "fatal-error"
-        );
-
-      const fatalMessage =
-        document.getElementById(
-          "fatal-message"
-        );
-
-      /*
-       * Prevent duplicate boot handling during client navigation.
-       */
-      if (
-        !runtimeWindow.__BLACKJACK_INDEX_READY__
-      ) {
-        runtimeWindow.__BLACKJACK_INDEX_READY__ =
-          true;
-
-        const setBootText =
-          (text: string) => {
-            if (bootText) {
-              bootText.textContent = text;
-            }
-          };
-
-        const hideBoot =
-          () => {
-            if (!bootOverlay) {
-              return;
-            }
-
-            bootOverlay.classList.add(
-              "boot-overlay--hidden"
-            );
-          };
-
-        const showFatalError =
-          (message: string) => {
-            if (fatalMessage) {
-              fatalMessage.textContent =
-                message;
-            }
-
-            fatalError?.classList.add(
-              "fatal-error--visible"
-            );
-
-            bootOverlay?.classList.add(
-              "boot-overlay--hidden"
-            );
-          };
-
-        setBootText(
-          "ENTERING TABLE"
-        );
-
-        /*
-         * Allow Game.astro to construct its canvas and engine.
-         */
-        requestAnimationFrame(() => {
-          setBootText(
-            "LIGHTING THE TABLE"
-          );
-
-          requestAnimationFrame(() => {
-            const canvas =
-              document.querySelector(
-                "#game-canvas"
-              );
-
-            if (
-              !(canvas instanceof HTMLCanvasElement)
-            ) {
-              showFatalError(
-                "Game canvas was not found."
-              );
-
-              return;
-            }
-
-            setBootText(
-              "DEALER READY"
-            );
-
-            /*
-             * The main Game.ts intro is responsible for the actual
-             * scene animation. This overlay only establishes the
-             * initial transition into the world.
-             */
-            window.setTimeout(
-              () => {
-                hideBoot();
-              },
-              700
-            );
-          });
-        });
-
-        /*
-         * Global runtime error reporting.
-         */
-        window.addEventListener(
-          "error",
-          (event) => {
-            if (
-              event.error instanceof Error
-            ) {
-              console.error(
-                "Blackjack runtime error:",
-                event.error
-              );
-            }
-          }
-        );
-
-        window.addEventListener(
-          "unhandledrejection",
-          (event) => {
-            console.error(
-              "Blackjack unhandled rejection:",
-              event.reason
-            );
-          }
-        );
-      }
-    </script>
   </body>
 </html>
 
@@ -267,7 +66,9 @@ const pageDescription =
      GLOBAL RESET
      ========================================================================== */
 
-  :global(*) {
+  :global(*),
+  :global(*::before),
+  :global(*::after) {
     box-sizing: border-box;
   }
 
@@ -280,11 +81,12 @@ const pageDescription =
 
     overflow: hidden;
 
-    background:
-      #020403;
+    background: #020403;
 
-    color-scheme:
-      dark;
+    color-scheme: dark;
+
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   :global(body) {
@@ -299,28 +101,23 @@ const pageDescription =
 
     overflow: hidden;
 
-    background:
-      #020403;
+    background: #020403;
+
+    color: #e7e1d3;
 
     font-family:
       "Courier New",
       Courier,
       monospace;
 
-    user-select:
-      none;
+    user-select: none;
 
-    overscroll-behavior:
-      none;
+    overscroll-behavior: none;
 
-    touch-action:
-      none;
+    touch-action: none;
 
-    -webkit-font-smoothing:
-      none;
-
-    -moz-osx-font-smoothing:
-      grayscale;
+    -webkit-font-smoothing: none;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   :global(body::-webkit-scrollbar) {
@@ -331,16 +128,22 @@ const pageDescription =
   :global(input),
   :global(textarea),
   :global(select) {
-    font:
-      inherit;
+    font: inherit;
+  }
+
+  :global(button) {
+    appearance: none;
+    -webkit-appearance: none;
   }
 
   :global(canvas) {
-    display:
-      block;
+    display: block;
 
-    image-rendering:
-      pixelated;
+    max-width: none;
+    max-height: none;
+
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
   }
 
   /* ==========================================================================
@@ -349,292 +152,35 @@ const pageDescription =
 
   .blackjack-app {
     position: fixed;
+
     inset: 0;
 
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
 
     min-width: 320px;
     min-height: 100dvh;
 
+    margin: 0;
+    padding: 0;
+
     overflow: hidden;
 
-    background:
-      #020403;
+    background: #020403;
 
-    isolation:
-      isolate;
-
-    contain:
-      strict;
+    isolation: isolate;
   }
 
   /* ==========================================================================
-     BOOT
-     ========================================================================== */
-
-  .boot-overlay {
-    position: absolute;
-    inset: 0;
-
-    z-index: 500;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    background:
-      #020403;
-
-    opacity: 1;
-    visibility: visible;
-
-    transition:
-      opacity 360ms steps(4, end),
-      visibility 360ms steps(4, end);
-
-    pointer-events:
-      all;
-  }
-
-  .boot-overlay--hidden {
-    opacity: 0;
-
-    visibility:
-      hidden;
-
-    pointer-events:
-      none;
-  }
-
-  .boot-content {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    flex-direction: column;
-
-    gap: 9px;
-
-    text-align:
-      center;
-  }
-
-  .boot-symbol {
-    width: 30px;
-    height: 30px;
-
-    display: grid;
-    place-items: center;
-
-    color:
-      #e1c777;
-
-    border:
-      1px solid
-      rgba(197,163,92,0.30);
-
-    background:
-      rgba(197,163,92,0.025);
-
-    font-size:
-      19px;
-
-    line-height:
-      1;
-  }
-
-  .boot-label {
-    color:
-      rgba(231,225,211,0.82);
-
-    font-size:
-      12px;
-
-    line-height:
-      1;
-
-    letter-spacing:
-      2.4px;
-  }
-
-  .boot-divider {
-    width:
-      58px;
-
-    height:
-      1px;
-
-    margin:
-      2px 0 3px;
-
-    background:
-      #72582b;
-  }
-
-  .boot-text {
-    color:
-      rgba(197,163,92,0.48);
-
-    font-size:
-      7px;
-
-    line-height:
-      1;
-
-    letter-spacing:
-      2px;
-  }
-
-  .boot-progress {
-    width:
-      150px;
-
-    height:
-      2px;
-
-    margin-top:
-      6px;
-
-    overflow:
-      hidden;
-
-    background:
-      rgba(197,163,92,0.08);
-  }
-
-  .boot-progress span {
-    display:
-      block;
-
-    width:
-      0%;
-
-    height:
-      100%;
-
-    background:
-      #c5a35c;
-
-    animation:
-      bootProgress 800ms steps(8, end) forwards;
-  }
-
-  @keyframes bootProgress {
-    from {
-      width:
-        0%;
-    }
-
-    to {
-      width:
-        100%;
-    }
-  }
-
-  /* ==========================================================================
-     FATAL ERROR
-     ========================================================================== */
-
-  .fatal-error {
-    position: absolute;
-    inset: 0;
-
-    z-index: 600;
-
-    display: none;
-    align-items: center;
-    justify-content: center;
-
-    padding:
-      20px;
-
-    background:
-      rgba(2,4,3,0.96);
-  }
-
-  .fatal-error--visible {
-    display:
-      flex;
-  }
-
-  .fatal-panel {
-    width:
-      min(360px, 100%);
-
-    padding:
-      20px;
-
-    border:
-      1px solid
-      rgba(138,39,44,0.45);
-
-    background:
-      #070A08;
-
-    box-shadow:
-      4px 4px 0
-      rgba(0,0,0,0.58);
-
-    text-align:
-      center;
-  }
-
-  .fatal-title {
-    margin-bottom:
-      10px;
-
-    color:
-      #bf666b;
-
-    font-size:
-      10px;
-
-    line-height:
-      1;
-
-    letter-spacing:
-      2px;
-  }
-
-  .fatal-message {
-    color:
-      rgba(231,225,211,0.54);
-
-    font-size:
-      8px;
-
-    line-height:
-      1.6;
-  }
-
-  /* ==========================================================================
-     MOBILE
+     MOBILE / SAFE AREA
      ========================================================================== */
 
   @media (max-width: 600px) {
-    .boot-symbol {
-      width:
-        28px;
+    .blackjack-app {
+      width: 100vw;
+      height: 100dvh;
 
-      height:
-        28px;
-
-      font-size:
-        17px;
-    }
-
-    .boot-label {
-      font-size:
-        10px;
-
-      letter-spacing:
-        2px;
-    }
-
-    .boot-progress {
-      width:
-        130px;
+      min-height: 100dvh;
     }
   }
 
@@ -643,17 +189,9 @@ const pageDescription =
      ========================================================================== */
 
   @media (prefers-reduced-motion: reduce) {
-    .boot-progress span {
-      width:
-        100%;
-
-      animation:
-        none;
-    }
-
-    .boot-overlay {
-      transition:
-        none;
+    :global(html),
+    :global(body) {
+      scroll-behavior: auto;
     }
   }
 </style>
