@@ -1,66 +1,242 @@
-Berikut list yang paling aman untuk membuat game **Blackjack 21 benar-benar playable**, tetapi tetap memakai `localStorage`.
+# Blackjack 21
 
-### File yang PERLU diubah
+A cinematic, first-person Blackjack 21 experience built around immersive casino visuals, smooth animations, and classic blackjack gameplay.
 
-| File                        | Status           | Fungsi                                                                                                                |
-| --------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `src/game/Blackjack.ts`     | **WAJIB**        | Mesin aturan blackjack: shuffle, deal, hit, stand, double, split, blackjack, bust, dealer turn, win/lose/push, payout |
-| `src/game/Game.ts`          | **WAJIB**        | Menghubungkan engine blackjack dengan input, animation, dan renderer                                                  |
-| `src/game/Input.ts`         | **WAJIB**        | Menerima aksi pemain: bet, deal, hit, stand, double, split                                                            |
-| `src/game/Renderer.ts`      | **WAJIB**        | Menampilkan kartu/chip/dealer/player berdasarkan state permainan aktual                                               |
-| `src/components/Game.astro` | **WAJIB**        | Menghubungkan canvas/game dengan kontrol permainan                                                                    |
-| `src/components/HUD.astro`  | **PERLU**        | Menampilkan saldo, bet, nilai kartu, dan tombol aksi secara minimal                                                   |
-| `src/game/Save.ts`          | **BARU — WAJIB** | Menyimpan/memuat saldo, statistik, dan progres ke `localStorage`                                                      |
+Step into the casino, place your bets, and challenge the dealer. Every hand is a new opportunity to test your strategy and beat the house.
 
-### File yang TIDAK perlu diubah sekarang
+## Features
 
-| File                    | Status               | Alasan                                                                     |
-| ----------------------- | -------------------- | -------------------------------------------------------------------------- |
-| `src/game/Entities.ts`  | **TIDAK PERLU**      | Struktur data yang sekarang sudah cukup untuk engine                       |
-| `src/game/Animation.ts` | **TIDAK PERLU dulu** | Sudah punya fondasi animasi; nanti hanya disesuaikan jika ada animasi baru |
-| `src/pages/index.astro` | **TIDAK PERLU**      | Sudah menjadi entry point                                                  |
-| `src/styles/global.css` | **TIDAK PERLU dulu** | Visual dasar bisa dipertahankan                                            |
-| `astro.config.mjs`      | **TIDAK PERLU**      | Tidak berhubungan dengan gameplay                                          |
-| `tsconfig.json`         | **TIDAK PERLU**      | Tidak ada perubahan arsitektur yang memerlukannya                          |
-| `package.json`          | **TIDAK PERLU**      | Gameplay ini bisa dibuat tanpa dependency tambahan                         |
+* 🎰 Immersive first-person casino table
+* 🃏 Classic Blackjack 21 gameplay
+* 💰 Interactive betting system
+* 🎯 Hit, Stand, and Double Down actions
+* 🏦 Dealer AI and card management
+* 🎴 Animated card dealing and card flips
+* 🪙 Chip placement, sliding, and collection animations
+* 🎥 Cinematic camera movements
+* 💡 Ambient lighting and casino atmosphere
+* ✨ Smooth UI transitions and visual feedback
+* 📱 Responsive game interface
+* ⚡ TypeScript-based game architecture
 
-### Urutan pengerjaan yang saya sarankan
+## Gameplay
+
+The goal of Blackjack is to beat the dealer by getting a hand value as close to **21** as possible without going over.
+
+### Card Values
+
+| Card              | Value      |
+| ----------------- | ---------- |
+| 2–10              | Face value |
+| Jack, Queen, King | 10         |
+| Ace               | 1 or 11    |
+
+### Available Actions
+
+* **Hit** — Draw another card.
+* **Stand** — Keep your current hand and end your turn.
+* **Double Down** — Double your bet and receive one additional card.
+* **Place Bet** — Choose your wager before the round begins.
+
+### Winning
+
+You win by:
+
+* Having a higher hand value than the dealer.
+* Getting a Blackjack when the dealer does not.
+* Having the dealer bust while your hand remains valid.
+
+A hand exceeding 21 is a **bust** and loses the round.
+
+## Project Structure
 
 ```text
-1. Blackjack.ts   ← buat mesin blackjack sungguhan
-2. Save.ts        ← localStorage
-3. Game.ts        ← sambungkan engine
-4. Input.ts       ← kontrol pemain
-5. Renderer.ts    ← visual state aktual
-6. Game.astro     ← integrasi
-7. HUD.astro      ← kontrol/info minimal
+src/
+├── Blackjack.ts    # Blackjack game logic and rules
+├── Entities.ts     # Cards, chips, dealer, and game entities
+├── Game.ts         # Main game loop and state management
+├── Input.ts        # Mouse, keyboard, and player interaction
+└── Renderer.ts     # Rendering, animations, and visual effects
+
+public/
+└── assets/         # Game assets, textures, and media
+
+index.html          # Main game page
 ```
 
-Sedangkan:
+## Architecture
 
-```text
-Entities.ts       ← TIDAK DIUBAH
-Animation.ts      ← TIDAK DIUBAH dulu
-index.astro       ← TIDAK DIUBAH
-global.css        ← TIDAK DIUBAH dulu
-astro.config.mjs  ← TIDAK DIUBAH
-tsconfig.json     ← TIDAK DIUBAH
-package.json      ← TIDAK DIUBAH
+The game is organized into several core systems:
+
+### Blackjack
+
+Handles the rules of blackjack, card values, hand calculations, dealer behavior, and round outcomes.
+
+### Entities
+
+Defines the objects used in the game, including cards, chips, the dealer, and other interactive elements.
+
+### Game
+
+Controls the main game loop, game states, round progression, and communication between systems.
+
+### Input
+
+Processes player interactions such as mouse clicks, keyboard input, and table actions.
+
+### Renderer
+
+Manages the visual presentation of the game, including the casino table, cards, chips, dealer animations, and camera effects.
+
+## Animation System
+
+The game uses a visual-first animation system designed to create a more cinematic experience.
+
+Animations include:
+
+* Dealer breathing and head movement
+* Dealer arm and hand motion
+* Card dealing
+* Card flipping
+* Card placement
+* Chip placement
+* Chip sliding
+* Chip collection
+* Player idle motion
+* Camera push
+* Smooth cinematic transitions
+
+The animation system is designed to make every action feel connected to the table rather than simply appearing instantly.
+
+## Getting Started
+
+### Prerequisites
+
+* Node.js
+* npm
+* A modern web browser
+
+### Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/your-username/blackjack-21.git
 ```
 
-Jadi totalnya **6 file yang diubah + 1 file baru**:
+Navigate into the project:
 
-```text
-MODIFY
-├── Blackjack.ts
-├── Game.ts
-├── Input.ts
-├── Renderer.ts
-├── Game.astro
-└── HUD.astro
-
-CREATE
-└── Save.ts
+```bash
+cd blackjack-21
 ```
 
-**`Entities.ts` yang barusan kamu kirim tidak perlu dipatch lagi untuk tahap gameplay.**
+Install dependencies:
+
+```bash
+npm install
+```
+
+### Development
+
+Start the development server:
+
+```bash
+npm run dev
+```
+
+Open the local development URL provided by your framework.
+
+### Production Build
+
+Create a production build:
+
+```bash
+npm run build
+```
+
+Preview the production build:
+
+```bash
+npm run preview
+```
+
+## Controls
+
+| Action      | Input                    |
+| ----------- | ------------------------ |
+| Place Bet   | Click betting area       |
+| Hit         | Click Hit button         |
+| Stand       | Click Stand button       |
+| Double Down | Click Double Down button |
+| Interact    | Mouse                    |
+| Navigate UI | Keyboard                 |
+
+## Design Philosophy
+
+Blackjack 21 focuses on making a traditional card game feel like a cinematic casino experience.
+
+The design combines:
+
+* Dark casino aesthetics
+* Premium table materials
+* Atmospheric lighting
+* Subtle motion
+* Responsive interactions
+* Clear gameplay feedback
+* Realistic card and chip movement
+
+The goal is to create a game that feels immersive without sacrificing usability.
+
+## Roadmap
+
+* [ ] Additional casino table themes
+* [ ] More dealer characters
+* [ ] Advanced dealer animations
+* [ ] Sound effects and casino ambience
+* [ ] Music system
+* [ ] Improved betting animations
+* [ ] More chip denominations
+* [ ] Statistics and session history
+* [ ] Additional blackjack rule variations
+* [ ] Mobile optimization
+* [ ] Accessibility improvements
+
+## Contributing
+
+Contributions are welcome.
+
+1. Fork the repository.
+2. Create a new branch.
+
+```bash
+git checkout -b feature/your-feature
+```
+
+3. Make your changes.
+4. Commit your work.
+
+```bash
+git commit -m "Add your feature"
+```
+
+5. Push your branch.
+
+```bash
+git push origin feature/your-feature
+```
+
+6. Open a Pull Request.
+
+## License
+
+This project is currently available for personal and educational use.
+
+Add your preferred license before distributing the project publicly.
+
+## Disclaimer
+
+Blackjack 21 is a fictional casino game created for entertainment and demonstration purposes. It does not involve real-money gambling.
+
+---
+
+**Built with TypeScript, creativity, and a love for cinematic game experiences.**
