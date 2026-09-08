@@ -23,6 +23,7 @@ import {
    - Other player cards are ALWAYS hidden from the human player.
    - Side-player cards are physically angled away from the camera.
    - Side-player cards are partially occluded by hands / sleeves.
+   - Side players sit outside the central camera axis.
    - Entire scene is procedurally rendered.
    - High-resolution procedural rendering with controlled pixel styling.
    - Real Blackjack state drives cards / chips / active player.
@@ -677,8 +678,8 @@ export class Renderer {
 
     /*
      * Side-player cards are drawn first.
-     * Occlusion is drawn afterwards so their hands/sleeves
-     * visibly cover the lower portion of the cards.
+     * Occlusion is drawn afterwards so hands / sleeves
+     * remain physically in front of the cards.
      */
     this.drawPeripheralCards(
       ctx,
@@ -1325,10 +1326,15 @@ export class Renderer {
     ctx.save();
 
 
+    /*
+     * Stronger side isolation:
+     * the body is pushed outside the main
+     * central viewing axis.
+     */
     ctx.globalAlpha =
       active
-        ? 0.72
-        : 0.32;
+        ? 0.76
+        : 0.30;
 
 
     ctx.fillStyle =
@@ -1342,17 +1348,12 @@ export class Renderer {
       isLeft
     ) {
 
+      /*
+       * Only a partial left-side body is visible.
+       * It intentionally exits the viewport.
+       */
       ctx.moveTo(
         0,
-        h *
-        0.48 +
-        idleMotion
-      );
-
-
-      ctx.lineTo(
-        w *
-        0.075,
         h *
         0.43 +
         idleMotion
@@ -1361,18 +1362,36 @@ export class Renderer {
 
       ctx.lineTo(
         w *
-        0.145,
+        0.045,
         h *
-        0.46 +
+        0.405 +
         idleMotion
       );
 
 
       ctx.lineTo(
         w *
-        0.17,
+        0.105,
         h *
-        0.62 +
+        0.445 +
+        idleMotion
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.155,
+        h *
+        0.555 +
+        idleMotion
+      );
+
+
+      ctx.lineTo(
+        w *
+        0.105,
+        h *
+        0.690 +
         idleMotion
       );
 
@@ -1380,7 +1399,7 @@ export class Renderer {
       ctx.lineTo(
         0,
         h *
-        0.70 +
+        0.735 +
         idleMotion
       );
 
@@ -1389,34 +1408,47 @@ export class Renderer {
       ctx.moveTo(
         w,
         h *
-        0.47 +
-        idleMotion
-      );
-
-
-      ctx.lineTo(
-        w *
-        0.925,
-        h *
         0.43 +
         idleMotion
       );
 
 
       ctx.lineTo(
+        w -
         w *
-        0.855,
+        0.045,
         h *
-        0.46 +
+        0.405 +
         idleMotion
       );
 
 
       ctx.lineTo(
+        w -
         w *
-        0.83,
+        0.105,
         h *
-        0.62 +
+        0.445 +
+        idleMotion
+      );
+
+
+      ctx.lineTo(
+        w -
+        w *
+        0.155,
+        h *
+        0.555 +
+        idleMotion
+      );
+
+
+      ctx.lineTo(
+        w -
+        w *
+        0.105,
+        h *
+        0.690 +
         idleMotion
       );
 
@@ -1424,7 +1456,7 @@ export class Renderer {
       ctx.lineTo(
         w,
         h *
-        0.70 +
+        0.735 +
         idleMotion
       );
     }
@@ -1436,8 +1468,17 @@ export class Renderer {
     ctx.fill();
 
 
+    /*
+     * Far-side shoulder plane.
+     */
     ctx.fillStyle =
       jacketLight;
+
+
+    ctx.globalAlpha =
+      active
+        ? 0.46
+        : 0.18;
 
 
     ctx.beginPath();
@@ -1449,85 +1490,92 @@ export class Renderer {
 
       ctx.moveTo(
         w *
-        0.10,
+        0.025,
         h *
-        0.59 +
+        0.52 +
         idleMotion
       );
 
 
       ctx.lineTo(
         w *
-        0.25,
+        0.105,
         h *
-        0.62
+        0.465 +
+        idleMotion
       );
 
 
       ctx.lineTo(
         w *
-        0.31,
+        0.165,
         h *
-        0.71
+        0.575
       );
 
 
       ctx.lineTo(
         w *
-        0.26,
+        0.135,
         h *
-        0.75
+        0.660
       );
 
 
       ctx.lineTo(
         w *
-        0.09,
+        0.045,
         h *
-        0.67 +
+        0.615 +
         idleMotion
       );
 
     } else {
 
       ctx.moveTo(
+        w -
         w *
-        0.90,
+        0.025,
         h *
-        0.59 +
+        0.52 +
         idleMotion
       );
 
 
       ctx.lineTo(
+        w -
         w *
-        0.75,
+        0.105,
         h *
-        0.62
+        0.465 +
+        idleMotion
       );
 
 
       ctx.lineTo(
+        w -
         w *
-        0.69,
+        0.165,
         h *
-        0.71
+        0.575
       );
 
 
       ctx.lineTo(
+        w -
         w *
-        0.74,
+        0.135,
         h *
-        0.75
+        0.660
       );
 
 
       ctx.lineTo(
+        w -
         w *
-        0.91,
+        0.045,
         h *
-        0.67 +
+        0.615 +
         idleMotion
       );
     }
@@ -1539,43 +1587,70 @@ export class Renderer {
     ctx.fill();
 
 
+    /*
+     * Small visible hand fragment.
+     */
     ctx.fillStyle =
       player?.visual
         ?.skin ??
       COLORS.skinDark;
 
 
+    ctx.globalAlpha =
+      active
+        ? 0.72
+        : 0.20;
+
+
     if (
       isLeft
     ) {
 
-      ctx.fillRect(
-        Math.round(
-          w *
-          0.245
-        ),
-        Math.round(
-          h *
-          0.69
-        ),
-        12,
-        5
+      ctx.save();
+
+      ctx.translate(
+        w *
+        0.155,
+        h *
+        0.675
       );
+
+      ctx.rotate(
+        -0.38
+      );
+
+      ctx.fillRect(
+        -7,
+        -3,
+        18,
+        6
+      );
+
+      ctx.restore();
 
     } else {
 
-      ctx.fillRect(
-        Math.round(
-          w *
-          0.735
-        ),
-        Math.round(
-          h *
-          0.69
-        ),
-        12,
-        5
+      ctx.save();
+
+      ctx.translate(
+        w *
+        0.845,
+        h *
+        0.675
       );
+
+      ctx.rotate(
+        0.38
+      );
+
+      ctx.fillRect(
+        -11,
+        -3,
+        18,
+        6
+      );
+
+      ctx.restore();
     }
 
 
@@ -3035,9 +3110,9 @@ export class Renderer {
 
 
     /*
-     * Only the player closest to the camera
-     * is allowed to occupy the visible side
-     * of the composition.
+     * We intentionally show only the outermost visible side hand.
+     * This prevents NPC hands from visually converging on the
+     * human player's central perspective.
      */
     const leftPlayer =
       leftPlayers.length >
@@ -3091,17 +3166,15 @@ export class Renderer {
      Perspective rules
      ------------------------------------------------------------------------
      Left:
-       cards rotate toward the left edge.
+       - pushed toward extreme left edge
+       - rotated away from center
+       - cards overlap heavily
+       - only narrow card surfaces are visible
 
      Right:
-       cards rotate toward the right edge.
+       - mirrored version
 
-     Both:
-       - narrow X scale
-       - compact overlap
-       - lower placement
-       - slight inward tilt
-       - always face-down
+     The side hand is deliberately NOT centered relative to the camera.
      ======================================================================== */
 
   private drawSidePlayerHand(
@@ -3130,13 +3203,12 @@ export class Renderer {
 
 
     /*
-     * Side cards are deliberately smaller
-     * than dealer / human cards.
+     * Smaller than human / dealer cards.
      */
     const width =
       Math.round(
         w *
-        0.036
+        0.033
       );
 
 
@@ -3148,22 +3220,21 @@ export class Renderer {
 
 
     /*
-     * Strong overlap.
-     *
-     * This visually communicates
-     * "held hand" rather than
-     * "cards placed on table".
+     * Very tight overlap.
      */
     const spacing =
       Math.max(
-        8,
+        6,
         Math.round(
           width *
-          0.40
+          0.33
         )
       );
 
 
+    /*
+     * Keep the visible fan compact.
+     */
     const visibleCards =
       cards.slice(
         Math.max(
@@ -3187,27 +3258,41 @@ export class Renderer {
 
 
     /*
-     * Move the hand toward the
-     * corresponding player's body.
+     * Strong lateral separation from
+     * the human player's axis.
+     *
+     * Old:
+     *   0.090 / 0.910
+     *
+     * New:
+     *   0.055 / 0.945
      */
     const baseX =
       isLeft
         ? w *
-          0.090
+          0.050
         : w *
-          0.910 -
+          0.950 -
           totalWidth;
 
 
     /*
-     * Lower than the old position.
-     *
-     * This lets the sleeves/hand
-     * naturally cover the card bottoms.
+     * Lower and farther toward the
+     * near edge of the table.
      */
     const baseY =
       h *
-      0.675;
+      0.665;
+
+
+    /*
+     * More severe edge-on perspective.
+     *
+     * 0.43 means only ~43% of the
+     * normal card width is visible.
+     */
+    const perspectiveScaleX =
+      0.43;
 
 
     for (
@@ -3237,10 +3322,27 @@ export class Renderer {
           2;
 
 
+      /*
+       * The outer cards move more aggressively
+       * toward the side edge, reinforcing depth.
+       */
+      const depthOffset =
+        Math.abs(
+          centerOffset
+        ) *
+        2.8;
+
+
       const x =
-        baseX +
-        i *
-          spacing;
+        isLeft
+          ? baseX -
+            depthOffset +
+            i *
+              spacing
+          : baseX +
+            depthOffset +
+            i *
+              spacing;
 
 
       /*
@@ -3251,39 +3353,21 @@ export class Renderer {
         Math.abs(
           centerOffset
         ) *
-          1.5;
+          1.25;
 
 
       /*
-       * The cards are intentionally
-       * turned away from the camera.
-       *
-       * Left side:
-       *   - larger negative angle
-       *
-       * Right side:
-       *   + larger angle
+       * Much stronger angular separation
+       * from the central camera.
        */
       const rotation =
         isLeft
-          ? -0.38 +
+          ? -0.52 +
             centerOffset *
-              0.060
-          : 0.38 -
+              0.085
+          : 0.52 -
             centerOffset *
-              0.060;
-
-
-      /*
-       * Narrow horizontal scale.
-       *
-       * This is the key visual difference
-       * from a card facing the camera.
-       */
-      const perspectiveScaleX =
-        isLeft
-          ? 0.58
-          : 0.58;
+              0.085;
 
 
       const motion =
@@ -3296,10 +3380,10 @@ export class Renderer {
 
 
       /*
-       * NPC cards MUST stay hidden.
+       * NPC cards MUST remain hidden.
        *
-       * motion.faceUp is intentionally ignored.
-       * card.faceUp is intentionally ignored.
+       * We never expose face-up data even if
+       * the underlying state contains faceUp=true.
        */
       const visual =
         this.cardToVisual(
@@ -3340,9 +3424,13 @@ export class Renderer {
   /* ========================================================================
      SIDE PLAYER OCCLUSION
 
-     The cards remain behind this layer, creating the impression that the
-     NPC is holding the cards close to their body rather than displaying them
-     face-on across the table.
+     These forms are intentionally large and asymmetric.
+
+     They cover enough of the lower cards that the cards read as:
+       "held near the side player's chest / body"
+
+     rather than:
+       "laid on the table facing the camera".
      ======================================================================== */
 
   private drawPeripheralPlayerOcclusion(
@@ -3355,11 +3443,11 @@ export class Renderer {
 
 
     /* ----------------------------------------------------------------------
-       LEFT PLAYER SLEEVE
+       LEFT DEEP SLEEVE
        ---------------------------------------------------------------------- */
 
     ctx.fillStyle =
-      "rgba(8,15,12,0.96)";
+      "rgba(6,12,10,0.985)";
 
 
     ctx.beginPath();
@@ -3368,93 +3456,15 @@ export class Renderer {
     ctx.moveTo(
       0,
       h *
-      0.655
+      0.615
     );
 
 
     ctx.lineTo(
       w *
-      0.065,
+      0.045,
       h *
-      0.628
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.145,
-      h *
-      0.642
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.220,
-      h *
-      0.696
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.250,
-      h
-    );
-
-
-    ctx.lineTo(
-      0,
-      h
-    );
-
-
-    ctx.closePath();
-
-
-    ctx.fill();
-
-
-    /* ----------------------------------------------------------------------
-       LEFT SLEEVE HIGHLIGHT
-       ---------------------------------------------------------------------- */
-
-    ctx.fillStyle =
-      "rgba(23,49,37,0.48)";
-
-
-    ctx.beginPath();
-
-
-    ctx.moveTo(
-      w *
-      0.078,
-      h *
-      0.635
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.145,
-      h *
-      0.651
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.205,
-      h *
-      0.692
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.185,
-      h *
-      0.713
+      0.602
     );
 
 
@@ -3462,7 +3472,36 @@ export class Renderer {
       w *
       0.105,
       h *
-      0.675
+      0.620
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.165,
+      h *
+      0.666
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.205,
+      h *
+      0.735
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.245,
+      h
+    );
+
+
+    ctx.lineTo(
+      0,
+      h
     );
 
 
@@ -3473,11 +3512,76 @@ export class Renderer {
 
 
     /* ----------------------------------------------------------------------
-       RIGHT PLAYER SLEEVE
+       LEFT SLEEVE SECOND PLANE
        ---------------------------------------------------------------------- */
 
     ctx.fillStyle =
-      "rgba(8,15,12,0.96)";
+      "rgba(25,51,39,0.54)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.040,
+      h *
+      0.620
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.100,
+      h *
+      0.625
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.160,
+      h *
+      0.667
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.190,
+      h *
+      0.705
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.162,
+      h *
+      0.735
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.082,
+      h *
+      0.686
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /* ----------------------------------------------------------------------
+       RIGHT DEEP SLEEVE
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(6,12,10,0.985)";
 
 
     ctx.beginPath();
@@ -3486,23 +3590,423 @@ export class Renderer {
     ctx.moveTo(
       w,
       h *
-      0.655
+      0.615
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.045,
+      h *
+      0.602
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.105,
+      h *
+      0.620
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.165,
+      h *
+      0.666
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.205,
+      h *
+      0.735
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.245,
+      h
+    );
+
+
+    ctx.lineTo(
+      w,
+      h
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /* ----------------------------------------------------------------------
+       RIGHT SLEEVE SECOND PLANE
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(25,51,39,0.54)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w -
+      w *
+      0.040,
+      h *
+      0.620
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.100,
+      h *
+      0.625
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.160,
+      h *
+      0.667
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.190,
+      h *
+      0.705
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.162,
+      h *
+      0.735
+    );
+
+
+    ctx.lineTo(
+      w -
+      w *
+      0.082,
+      h *
+      0.686
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    /* ----------------------------------------------------------------------
+       LEFT HAND
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(94,71,53,0.62)";
+
+
+    ctx.beginPath();
+
+
+    ctx.ellipse(
+      w *
+      0.168,
+      h *
+      0.681,
+      15,
+      6,
+      -0.32,
+      0,
+      TAU
+    );
+
+
+    ctx.fill();
+
+
+    ctx.fillStyle =
+      "rgba(117,88,65,0.23)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.154
+      ),
+      Math.round(
+        h *
+        0.686
+      ),
+      24,
+      3
+    );
+
+
+    /*
+     * Left knuckle pixels.
+     */
+    ctx.fillStyle =
+      "rgba(137,103,75,0.38)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.158
+      ),
+      Math.round(
+        h *
+        0.678
+      ),
+      4,
+      2
+    );
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.166
+      ),
+      Math.round(
+        h *
+        0.677
+      ),
+      4,
+      2
+    );
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.174
+      ),
+      Math.round(
+        h *
+        0.676
+      ),
+      4,
+      2
+    );
+
+
+    /* ----------------------------------------------------------------------
+       RIGHT HAND
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(94,71,53,0.62)";
+
+
+    ctx.beginPath();
+
+
+    ctx.ellipse(
+      w *
+      0.832,
+      h *
+      0.681,
+      15,
+      6,
+      0.32,
+      0,
+      TAU
+    );
+
+
+    ctx.fill();
+
+
+    ctx.fillStyle =
+      "rgba(117,88,65,0.23)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.822
+      ),
+      Math.round(
+        h *
+        0.686
+      ),
+      24,
+      3
+    );
+
+
+    /*
+     * Right knuckle pixels.
+     */
+    ctx.fillStyle =
+      "rgba(137,103,75,0.38)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.838
+      ),
+      Math.round(
+        h *
+        0.678
+      ),
+      4,
+      2
+    );
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.830
+      ),
+      Math.round(
+        h *
+        0.677
+      ),
+      4,
+      2
+    );
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.822
+      ),
+      Math.round(
+        h *
+        0.676
+      ),
+      4,
+      2
+    );
+
+
+    /* ----------------------------------------------------------------------
+       UNDER-HAND SEAMS
+       ---------------------------------------------------------------------- */
+
+    ctx.fillStyle =
+      "rgba(0,0,0,0.34)";
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.085
+      ),
+      Math.round(
+        h *
+        0.714
+      ),
+      Math.round(
+        w *
+        0.12
+      ),
+      2
+    );
+
+
+    ctx.fillRect(
+      Math.round(
+        w *
+        0.795
+      ),
+      Math.round(
+        h *
+        0.714
+      ),
+      Math.round(
+        w *
+        0.12
+      ),
+      2
+    );
+
+
+    /*
+     * Tiny forearm shadow wedges.
+     */
+    ctx.fillStyle =
+      "rgba(0,0,0,0.42)";
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.125,
+      h *
+      0.705
     );
 
 
     ctx.lineTo(
       w *
-      0.935,
+      0.220,
       h *
-      0.628
+      0.755
     );
 
 
     ctx.lineTo(
       w *
-      0.855,
+      0.200,
       h *
-      0.642
+      0.790
+    );
+
+
+    ctx.lineTo(
+      w *
+      0.105,
+      h *
+      0.735
+    );
+
+
+    ctx.closePath();
+
+
+    ctx.fill();
+
+
+    ctx.beginPath();
+
+
+    ctx.moveTo(
+      w *
+      0.875,
+      h *
+      0.705
     );
 
 
@@ -3510,69 +4014,15 @@ export class Renderer {
       w *
       0.780,
       h *
-      0.696
+      0.755
     );
 
 
     ctx.lineTo(
       w *
-      0.750,
-      h
-    );
-
-
-    ctx.lineTo(
-      w,
-      h
-    );
-
-
-    ctx.closePath();
-
-
-    ctx.fill();
-
-
-    /* ----------------------------------------------------------------------
-       RIGHT SLEEVE HIGHLIGHT
-       ---------------------------------------------------------------------- */
-
-    ctx.fillStyle =
-      "rgba(23,49,37,0.48)";
-
-
-    ctx.beginPath();
-
-
-    ctx.moveTo(
-      w *
-      0.922,
+      0.800,
       h *
-      0.635
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.855,
-      h *
-      0.651
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.795,
-      h *
-      0.692
-    );
-
-
-    ctx.lineTo(
-      w *
-      0.815,
-      h *
-      0.713
+      0.790
     );
 
 
@@ -3580,7 +4030,7 @@ export class Renderer {
       w *
       0.895,
       h *
-      0.675
+      0.735
     );
 
 
@@ -3588,138 +4038,6 @@ export class Renderer {
 
 
     ctx.fill();
-
-
-    /* ----------------------------------------------------------------------
-       HAND COVER — LEFT
-       ---------------------------------------------------------------------- */
-
-    ctx.fillStyle =
-      "rgba(89,68,51,0.48)";
-
-
-    ctx.beginPath();
-
-
-    ctx.ellipse(
-      w *
-        0.205,
-      h *
-        0.687,
-      14,
-      6,
-      -0.14,
-      0,
-      TAU
-    );
-
-
-    ctx.fill();
-
-
-    ctx.fillStyle =
-      "rgba(61,44,34,0.22)";
-
-
-    ctx.fillRect(
-      Math.round(
-        w *
-        0.190
-      ),
-      Math.round(
-        h *
-        0.690
-      ),
-      22,
-      4
-    );
-
-
-    /* ----------------------------------------------------------------------
-       HAND COVER — RIGHT
-       ---------------------------------------------------------------------- */
-
-    ctx.fillStyle =
-      "rgba(89,68,51,0.48)";
-
-
-    ctx.beginPath();
-
-
-    ctx.ellipse(
-      w *
-        0.795,
-      h *
-        0.687,
-      14,
-      6,
-      0.14,
-      0,
-      TAU
-    );
-
-
-    ctx.fill();
-
-
-    ctx.fillStyle =
-      "rgba(61,44,34,0.22)";
-
-
-    ctx.fillRect(
-      Math.round(
-        w *
-        0.780
-      ),
-      Math.round(
-        h *
-        0.690
-      ),
-      22,
-      4
-    );
-
-
-    /*
-     * Small dark seam below the hand.
-     * This anchors the cards physically to the table.
-     */
-    ctx.fillStyle =
-      "rgba(0,0,0,0.28)";
-
-
-    ctx.fillRect(
-      Math.round(
-        w *
-        0.14
-      ),
-      Math.round(
-        h *
-        0.714
-      ),
-      Math.round(
-        w *
-        0.11
-      ),
-      2
-    );
-
-
-    ctx.fillRect(
-      Math.round(
-        w *
-        0.75
-      ),
-      Math.round(
-        h *
-        0.714
-      ),
-      Math.round(
-        w *
-        0.11
-      ),
-      2
-    );
 
 
     ctx.restore();
@@ -3933,7 +4251,7 @@ export class Renderer {
       const x =
         startX +
         i *
-        spacing;
+          spacing;
 
 
       const y =
@@ -4462,6 +4780,12 @@ export class Renderer {
     );
 
 
+    /*
+     * Clamp the final visual scale.
+     *
+     * This prevents accidental negative / oversized
+     * side-card widths during animation.
+     */
     const visualScaleX =
       this.clamp(
         visual.scaleX ??
@@ -5019,36 +5343,10 @@ export class Renderer {
     }
 
 
-    ctx.fillStyle =
-      "rgba(225,199,119,0.58)";
-
-
-    ctx.font =
-      FONT.small;
-
-
-    ctx.textAlign =
-      "center";
-
-
-    ctx.textBaseline =
-      "middle";
-
-
-    ctx.fillText(
-      `BET $${Math.max(
-        0,
-        Math.floor(
-          this.safeNumber(
-            human.bet,
-            0
-          )
-        )
-      )}`,
-      cx,
-      baseY +
-        27
-    );
+    /*
+     * No physical BET amount is rendered.
+     * Bet value remains available to gameplay/UI state only.
+     */
   }
 
 
@@ -5269,8 +5567,8 @@ export class Renderer {
 
     const dealerRule =
       table.dealerHitsSoft17
-        ? "DEALER HITS SOFT 17"
-        : "DEALER STANDS ON 17";
+        ? ""
+        : "";
 
 
     ctx.fillText(
@@ -5286,10 +5584,10 @@ export class Renderer {
 
 
     ctx.fillText(
-      `BLACKJACK PAYS ${
+      ` ${
         table.blackjackPayout ===
         1.5
-          ? "3 : 2"
+          ? ""
           : `${table.blackjackPayout} : 1`
       }`,
       cx,
@@ -5354,18 +5652,6 @@ export class Renderer {
       );
 
 
-    const bet =
-      Math.max(
-        0,
-        Math.floor(
-          this.safeNumber(
-            human.bet,
-            0
-          )
-        )
-      );
-
-
     const value =
       Math.max(
         0,
@@ -5414,6 +5700,10 @@ export class Renderer {
 
     ctx.save();
 
+
+    /* ----------------------------------------------------------------------
+       BANKROLL
+       ---------------------------------------------------------------------- */
 
     ctx.fillStyle =
       "rgba(5,8,7,0.78)";
@@ -5487,6 +5777,10 @@ export class Renderer {
     );
 
 
+    /* ----------------------------------------------------------------------
+       PLAYER STATUS
+       ---------------------------------------------------------------------- */
+
     ctx.fillStyle =
       "rgba(5,8,7,0.78)";
 
@@ -5528,8 +5822,11 @@ export class Renderer {
       "rgba(231,225,211,0.58)";
 
 
+    /*
+     * Bet amount deliberately removed.
+     */
     ctx.fillText(
-      `BET $${bet}  •  HAND ${value || "—"}`,
+      `HAND ${value || "—"}`,
       rightX -
         12,
       panelY -
